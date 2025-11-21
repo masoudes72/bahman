@@ -1,0 +1,790 @@
+// ==UserScript==
+// @name         Bahman Auto Buyer (Ultimate Monitor + UI Toggle)
+// @namespace    https://bahman.iranecar.com/
+// @version      2025-11-21-UltimateUI-RightBottom
+// @description  Full automation with In-Page Network Monitor & Toggle Button (Right-Bottom)
+// @author       You
+// @match        https://bahman.iranecar.com/*
+// @grant        GM_xmlhttpRequest
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @connect      bahmanapi2.iranecar.com
+// @connect      recaptchag.iranecar.com
+// @connect      siapa-bahman.viiona.ir
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    // لیست استان‌ها
+    const PROVINCES = [
+        { id: "1", title: "آذربایجان شرقی" }, { id: "2", title: "آذربایجان غربی" }, { id: "3", title: "اردبیل" },
+        { id: "4", title: "ایلام" }, { id: "5", title: "اصفهان" }, { id: "6", title: "بوشهر" },
+        { id: "7", title: "تهران" }, { id: "8", title: "چهارمحال بختیاری" }, { id: "9", title: "خراسان شمالی" },
+        { id: "10", title: "خراسان رضوی" }, { id: "11", title: "خراسان جنوبی" }, { id: "12", title: "خوزستان" },
+        { id: "13", title: "زنجان" }, { id: "14", title: "سمنان" }, { id: "15", title: "سیستان و بلوچستان" },
+        { id: "16", title: "فارس" }, { id: "17", title: "قزوین" }, { id: "19", title: "کرمان" },
+        { id: "20", title: "کرمانشاه" }, { id: "21", title: "کهگیلویه و بویراحمد" }, { id: "22", title: "گلستان" },
+        { id: "23", title: "گیلان" }, { id: "24", title: "مازندران" }, { id: "25", title: "مرکزی" },
+        { id: "26", title: "هرمزگان" }, { id: "27", title: "همدان" }, { id: "28", title: "یزد" },
+        { id: "29", title: "کردستان" }, { id: "30", title: "لرستان" }, { id: "31", title: "البرز" },
+        { id: "33", title: "قم" }, { id: "34", title: "سایر" }
+    ];
+
+    const DEFAULT_CONFIG = {
+        targetCar: 'دیگنیتی',
+        targetPrice: '',
+        planKeywords: '',
+        provinceId: '7',
+        cityName: 'تهران',
+        bankName: 'ParsianKarafarin',
+        colorPriorities: 'سفید, مشکی'
+    };
+
+    const API_BASE = "https://bahmanapi2.iranecar.com/api/v1";
+    const CAPTCHA_BASE = "https://recaptchag.iranecar.com/api";
+    const SOLVER_URL = "https://siapa-bahman.viiona.ir/solve";
+
+    const HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+        "Accept": "application/json",
+        "Accept-Language": "fa-IR,fa;q=0.9",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
+        "Priority": "u=4"
+    };
+
+    // --- استایل‌ها ---
+    const styles = `
+        .bm-container { position: fixed; top: 20px; left: 20px; width: 360px; background: #121212; color: #e0e0e0; border: 1px solid #333; border-radius: 12px; z-index: 100000;
+            font-family: 'Tahoma', sans-serif; direction: rtl; text-align: right; box-shadow: 0 10px 40px rgba(0,0,0,0.8); font-size: 13px;
+            display: none;
+        }
+        .bm-header { background: #1a1a1a; padding: 12px 15px; border-bottom: 1px solid #333;
+            font-weight: bold; display: flex; justify-content: space-between; align-items: center; border-radius: 12px 12px 0 0;
+        }
+
+        /* دکمه‌های شناور - پایین سمت راست */
+        #bm-controls {
+            position: fixed; bottom: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column-reverse; gap: 10px;
+        }
+        .bm-float-btn {
+            width: 50px; height: 50px; border-radius: 50%; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5); border: 2px solid #fff; transition: transform 0.2s;
+        }
+        .bm-float-btn:hover { transform: scale(1.1); }
+        .bm-float-btn span { font-size: 24px; }
+
+        #bm-floater-main { background: linear-gradient(135deg, #00c853, #64dd17); }
+        #bm-floater-net { background: linear-gradient(135deg, #2979ff, #29b6f6); }
+
+        .bm-close-btn { cursor: pointer; color: #ff5252; font-size: 18px; font-weight: bold; padding: 0 5px; }
+        .bm-close-btn:hover { color: #ff1744; }
+
+        .bm-content { padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+        .bm-input, .bm-select { background: #252525; border: 1px solid #444; color: #fff;
+            padding: 8px; border-radius: 6px; width: 100%; box-sizing: border-box; text-align: center; font-size: 14px; outline: none; transition: 0.2s; margin-top: 3px;
+        }
+        .bm-select { text-align: right; padding-right: 10px; cursor: pointer; }
+        .bm-input:focus, .bm-select:focus { border-color: #00e676; background: #2a2a2a; }
+        .bm-label { font-size: 11px; color: #aaa; margin-right: 2px; }
+        .bm-btn { background: linear-gradient(135deg, #00c853, #64dd17); color: #000; border: none; padding: 10px;
+            border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; transition: 0.2s; font-size: 14px;
+        }
+        .bm-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .bm-btn:disabled { background: #424242; color: #888; cursor: not-allowed; transform: none; }
+        .bm-captcha-img { width: 100%; height: 60px; object-fit: contain; background: #fff; border-radius: 6px;
+            cursor: pointer; border: 2px solid #444; }
+        .bm-log { background: #000; color: #00e676;
+            padding: 10px; border-radius: 6px; font-family: monospace; font-size: 11px; height: 140px; overflow-y: auto; border: 1px solid #333; margin-top: 5px;
+        }
+        .bm-badge { background: #333; padding: 3px 8px; border-radius: 4px; font-size: 11px; color: #ccc; }
+        .bm-row { display: flex; gap: 10px; }
+        .bm-status { font-size: 11px; color: #ffa726; text-align: center; margin-top: 5px; }
+
+        /* Network Monitor Panel */
+        .bm-net-panel { position: fixed; bottom: 10px; left: 10px; width: 500px; height: 300px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; z-index: 99998; display: none;
+            flex-direction: column; box-shadow: 0 -5px 20px rgba(0,0,0,0.5); font-family: monospace; font-size: 11px; color: #c9d1d9; }
+        .bm-net-header { padding: 5px 10px; background: #161b22; border-bottom: 1px solid #30363d;
+            font-weight: bold; display: flex; justify-content: space-between; }
+        .bm-net-body { flex: 1; overflow-y: auto; padding: 5px; }
+        .bm-net-row { display: flex; border-bottom: 1px solid #21262d; padding: 4px 0; cursor: pointer; }
+        .bm-net-row:hover { background: #21262d; }
+        .bm-net-method { width: 50px; font-weight: bold; }
+        .bm-net-status { width: 40px; text-align: center; }
+        .bm-net-url { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .bm-net-time { width: 60px; text-align: right; color: #8b949e; }
+        .status-200 { color: #3fb950; }
+        .status-400 { color: #f85149; }
+        .method-GET { color: #58a6ff; }
+        .method-POST { color: #d29922; }
+    `;
+
+    const styleSheet = document.createElement("style");
+    styleSheet.innerText = styles;
+    document.head.appendChild(styleSheet);
+
+    // --- State ---
+    let currentVisitorId = localStorage.getItem('VisitorId') || (Math.random().toString(16).slice(2) + Date.now().toString(16));
+    localStorage.setItem('VisitorId', currentVisitorId);
+    let storedCookies = localStorage.getItem('bm_cookies') || '';
+    let loginCapToken = null;
+    let isRunning = false;
+
+    function normalizePersian(str) {
+        if (!str) return "";
+        return str.toString().replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+
+    function getUserConfig() {
+        return {
+            targetCar: localStorage.getItem('bm_cfg_car') || DEFAULT_CONFIG.targetCar,
+            targetPrice: localStorage.getItem('bm_cfg_price') || DEFAULT_CONFIG.targetPrice,
+            planKeywords: localStorage.getItem('bm_cfg_keywords') || DEFAULT_CONFIG.planKeywords,
+            provinceId: localStorage.getItem('bm_cfg_province') || DEFAULT_CONFIG.provinceId,
+            cityName: localStorage.getItem('bm_cfg_cityname') || DEFAULT_CONFIG.cityName,
+            bankName: localStorage.getItem('bm_cfg_bank') || DEFAULT_CONFIG.bankName,
+            colorPriorities: localStorage.getItem('bm_cfg_colors') || DEFAULT_CONFIG.colorPriorities
+        };
+    }
+
+    function saveUserConfig(cfg) {
+        localStorage.setItem('bm_cfg_car', cfg.targetCar);
+        localStorage.setItem('bm_cfg_price', cfg.targetPrice);
+        localStorage.setItem('bm_cfg_keywords', cfg.planKeywords);
+        localStorage.setItem('bm_cfg_province', cfg.provinceId);
+        localStorage.setItem('bm_cfg_cityname', cfg.cityName);
+        localStorage.setItem('bm_cfg_bank', cfg.bankName);
+        localStorage.setItem('bm_cfg_colors', cfg.colorPriorities);
+    }
+
+    function log(msg) {
+        console.log(`[BahmanBot] ${msg}`);
+        const el = document.getElementById('bm-log-box');
+        if (el) {
+            const time = new Date().toLocaleTimeString('fa-IR');
+            el.innerHTML += `<div style="border-bottom:1px solid #222;padding:2px 0;">[${time}] ${msg}</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+    }
+
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // --- Network Monitor UI ---
+    function initMonitor() {
+        if (document.querySelector('.bm-net-panel')) return;
+        const div = document.createElement('div');
+        div.className = 'bm-net-panel';
+        div.id = 'bm-net-panel';
+        div.innerHTML = `
+            <div class="bm-net-header">
+                <span>🌐 Network Monitor</span>
+                <span class="bm-close-btn" onclick="document.getElementById('bm-net-panel').style.display='none'; document.getElementById('bm-floater-net').style.display='flex';">✖</span>
+            </div>
+            <div class="bm-net-body" id="bm-net-list"></div>
+        `;
+        document.body.appendChild(div);
+    }
+
+    function logNetwork(method, url, status, time, reqData, resData) {
+        const list = document.getElementById('bm-net-list');
+        if (!list) return;
+
+        const row = document.createElement('div');
+        row.className = 'bm-net-row';
+        const cleanUrl = url.replace(API_BASE, '').split('?')[0];
+        const statusClass = status >= 200 && status < 300 ? 'status-200' : 'status-400';
+        const methodClass = `method-${method}`;
+        row.innerHTML = `
+            <div class="bm-net-method ${methodClass}">${method}</div>
+            <div class="bm-net-status ${statusClass}">${status}</div>
+            <div class="bm-net-url" title="${url}">${cleanUrl}</div>
+            <div class="bm-net-time">${time}ms</div>
+        `;
+        row.onclick = () => {
+            console.group(`🔍 Details: ${cleanUrl}`);
+            console.log('Request:', reqData ? JSON.parse(reqData) : 'No Body');
+            try { console.log('Response:', JSON.parse(resData)); } catch { console.log('Response:', resData); }
+            console.groupEnd();
+        };
+
+        list.appendChild(row);
+        list.scrollTop = list.scrollHeight;
+    }
+
+    // --- Engine ---
+    function request(url, method = 'GET', data = null, auth = true) {
+        return new Promise((resolve, reject) => {
+            const headers = { ...HEADERS };
+            headers['VisitorId'] = currentVisitorId;
+            if (storedCookies) headers['Cookie'] = storedCookies;
+
+            if (auth) {
+                const tokenData = localStorage.getItem('bm_token');
+                if (tokenData) {
+                    try {
+                        if (tokenData.startsWith('{')) {
+                            const parsed = JSON.parse(tokenData);
+                            const t = parsed.token || parsed;
+                            headers['Authorization'] = `Bearer ${t}`;
+                        } else {
+                            headers['Authorization'] = `Bearer ${tokenData}`;
+                        }
+                    } catch (e) {
+                        headers['Authorization'] = `Bearer ${tokenData}`;
+                    }
+                }
+            }
+
+            if (method === 'GET') delete headers['Content-Type'];
+            else headers['Content-Type'] = 'application/json';
+
+            const fullUrl = `${url}${url.includes('?') ? '&' : '?'}rnd=${Math.random()}`;
+            const startTime = Date.now();
+            const reqBody = data ? JSON.stringify(data) : null;
+
+            GM_xmlhttpRequest({
+                method: method,
+                url: fullUrl,
+                headers: headers,
+                data: reqBody,
+                onload: function(response) {
+                    const duration = Date.now() - startTime;
+                    logNetwork(method, url, response.status, duration, reqBody, response.responseText);
+
+                    const setCookie = response.responseHeaders.match(/^set-cookie:\s*(.*)$/gim);
+                    if (setCookie) {
+                        const newCookies = setCookie.map(c => c.replace(/^set-cookie:\s*/i, '').split(';')[0]).join('; ');
+                        storedCookies = newCookies;
+                        localStorage.setItem('bm_cookies', storedCookies);
+                    }
+
+                    if (response.status === 401) {
+                        log('❌ نشست منقضی شد. لطفا مجدد وارد شوید.');
+                        localStorage.removeItem('bm_token');
+                        isRunning = false;
+                        renderLogin();
+                        reject('401 Unauthorized');
+                        return;
+                    }
+
+                    if (response.status >= 200 && response.status < 300) {
+                        try {
+                            resolve(JSON.parse(response.responseText));
+                        } catch (e) {
+                            resolve(response.responseText);
+                        }
+                    } else {
+                        try {
+                            const json = JSON.parse(response.responseText);
+                            if(json.errors && json.errors.length > 0) reject(`${json.errors[0].errorDescription}`);
+                            else if(json.message) reject(`${json.message}`);
+                            else reject(`Status ${response.status}`);
+                        } catch {
+                            reject(`Status ${response.status}: ${response.statusText}`);
+                        }
+                    }
+                },
+                onerror: function() {
+                    logNetwork(method, url, 0, 0, reqBody, 'Network Error');
+                    reject('Network Error');
+                }
+            });
+        });
+    }
+
+    function getCaptcha() {
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: `${CAPTCHA_BASE}/Captcha/GetCaptchaImage2?visitorId=${currentVisitorId}&t=${Math.random()}`,
+                headers: { ...HEADERS, 'Accept': '*/*' },
+                responseType: 'blob',
+                onload: function(res) {
+                    if (res.status === 200) {
+                        const t = res.responseHeaders.match(/token-id:\s*(.*)/i);
+                        const tid = t ? t[1].trim() : null;
+                        const url = URL.createObjectURL(res.response);
+                        resolve({ url, tid });
+                    } else reject('Captcha Error');
+                }
+            });
+        });
+    }
+
+    async function solveCaptcha(blobUrl) {
+        try {
+            const res = await fetch(blobUrl);
+            const blob = await res.blob();
+            const formData = new FormData();
+            formData.append('file', blob, 'image.jpg');
+            return new Promise((resolve) => {
+                GM_xmlhttpRequest({
+                    method: "POST",
+                    url: SOLVER_URL,
+                    data: formData,
+                    onload: (response) => {
+                        try {
+                            const json = JSON.parse(response.responseText);
+                            resolve(json.text || json.result || null);
+                        } catch { resolve(null); }
+                    },
+                    onerror: () => resolve(null)
+                });
+            });
+        } catch { return null; }
+    }
+
+    // --- Helpers for Retry ---
+    async function retryUntilSuccess(taskName, taskFn, delay = 1000, stopOnError = false) {
+        while (isRunning) {
+            try {
+                const result = await taskFn();
+                if (result) return result;
+                log(`⏳ ${taskName}: در انتظار...`);
+            } catch (e) {
+                if (String(e).includes('401')) return null;
+                log(`⚠️ خطا در ${taskName}: ${e}. تلاش مجدد...`);
+                if (stopOnError) throw e;
+            }
+            await sleep(delay);
+        }
+        return null;
+    }
+
+    // --- Toggle & Floating UI ---
+    function toggleMain(show) {
+        const panel = document.querySelector('.bm-container');
+        const btn = document.getElementById('bm-floater-main');
+        if(show) {
+            if(panel) panel.style.display = 'block';
+            if(btn) btn.style.display = 'none';
+        } else {
+            if(panel) panel.style.display = 'none';
+            if(btn) btn.style.display = 'flex';
+        }
+    }
+
+    function toggleNet(show) {
+        const panel = document.getElementById('bm-net-panel');
+        const btn = document.getElementById('bm-floater-net');
+        if(show) {
+            if(panel) panel.style.display = 'flex';
+            if(btn) btn.style.display = 'none';
+        } else {
+            if(panel) panel.style.display = 'none';
+            if(btn) btn.style.display = 'flex';
+        }
+    }
+
+    function createFloaters() {
+        if (document.getElementById('bm-controls')) return;
+        const con = document.createElement('div');
+        con.id = 'bm-controls';
+
+        // Main Bot Button
+        const btnMain = document.createElement('div');
+        btnMain.className = 'bm-float-btn';
+        btnMain.id = 'bm-floater-main';
+        btnMain.innerHTML = '<span>🤖</span>';
+        btnMain.onclick = () => toggleMain(true);
+
+        // Network Monitor Button
+        const btnNet = document.createElement('div');
+        btnNet.className = 'bm-float-btn';
+        btnNet.id = 'bm-floater-net';
+        btnNet.innerHTML = '<span>🌐</span>';
+        btnNet.onclick = () => toggleNet(true);
+
+        con.appendChild(btnMain);
+        con.appendChild(btnNet);
+        document.body.appendChild(con);
+    }
+
+    // --- UI ---
+    function createUI() {
+        const exist = document.querySelector('.bm-container');
+        if (exist) exist.remove();
+
+        initMonitor(); // Create Network panel first
+        createFloaters(); // Create buttons
+
+        const div = document.createElement('div');
+        div.className = 'bm-container';
+        document.body.appendChild(div);
+
+        // Default State: Show Main, Show Net
+        toggleMain(true);
+        toggleNet(true);
+
+        return div;
+    }
+
+    function renderLogin() {
+        const div = createUI();
+        div.innerHTML = `
+            <div class="bm-header">
+                <span>🔐 ورود به سیستم</span>
+                <span class="bm-close-btn" onclick="document.querySelector('.bm-container').style.display='none'; document.getElementById('bm-floater-main').style.display='flex';">✖</span>
+            </div>
+            <div class="bm-content">
+                <input id="bm-user" class="bm-input" placeholder="کد ملی">
+                <input id="bm-pass" type="password" class="bm-input" placeholder="رمز عبور">
+                <div style="text-align:center;cursor:pointer" id="bm-cap-box"><small>Loading Captcha...</small></div>
+                <input id="bm-cap-input" class="bm-input" placeholder="کد امنیتی">
+                <button id="bm-login-btn" class="bm-btn">ورود</button>
+                <div id="bm-log-box" class="bm-log">لطفا وارد شوید...</div>
+            </div>
+        `;
+        const refresh = async () => {
+            const box = document.getElementById('bm-cap-box');
+            const inp = document.getElementById('bm-cap-input');
+            box.innerHTML = '<small>...</small>';
+            try {
+                const cap = await getCaptcha();
+                loginCapToken = cap.tid;
+                box.innerHTML = `<img src="${cap.url}" class="bm-captcha-img">`;
+                box.onclick = refresh;
+                inp.placeholder = "حل خودکار...";
+                const txt = await solveCaptcha(cap.url);
+                if(txt) { inp.value = txt; inp.style.borderColor = '#00e676'; }
+            } catch { box.innerHTML = 'Error'; }
+        };
+        refresh();
+        document.getElementById('bm-login-btn').onclick = async () => {
+            const u = document.getElementById('bm-user').value;
+            const p = document.getElementById('bm-pass').value;
+            const c = document.getElementById('bm-cap-input').value;
+            if (!u || !p || !c) return log('فیلدها خالی است');
+
+            log('🔄 ورود...');
+            try {
+                const res = await request(`${API_BASE}/identity/login`, 'POST', {
+                    nationalCode: u, password: p, captchaResult: c, captchaToken: loginCapToken, captchaResponse: ""
+                }, false);
+                let token = null, user = null;
+                if (res.token && res.token.token) { token = res.token; user = res.customer; }
+                else if (res.data?.token?.token) { token = res.data.token; user = res.data.customer; }
+
+                if (token) {
+                    log('✅ خوش آمدید!');
+                    localStorage.setItem('bm_token', JSON.stringify(token));
+                    if(user) localStorage.setItem('bm_user', JSON.stringify(user));
+                    renderDashboard(user);
+                } else {
+                    log('❌ ' + (res.message || 'خطا'));
+                    refresh();
+                }
+            } catch (e) {
+                log('❌ ' + e);
+                refresh();
+            }
+        };
+    }
+
+    function getProvinceOptions(selectedId) {
+        return PROVINCES.map(p =>
+            `<option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>${p.title}</option>`
+        ).join('');
+    }
+
+    function renderDashboard(user) {
+        const div = createUI();
+        const cfg = getUserConfig();
+        const name = user ? `${user.firstName} ${user.lastName}` : 'کاربر';
+        div.innerHTML = `
+            <div class="bm-header">
+                <div style="display:flex;flex-direction:column">
+                    <span>🏎️ پنل خرید هوشمند</span>
+                    <span class="bm-badge" style="color:#00e676;margin-top:2px">${name}</span>
+                </div>
+                <span class="bm-close-btn" onclick="document.querySelector('.bm-container').style.display='none'; document.getElementById('bm-floater-main').style.display='flex';">✖</span>
+            </div>
+            <div class="bm-content">
+                <div class="bm-row">
+                    <div style="flex:1">
+                        <div class="bm-label">نام خودرو</div>
+                        <input id="cfg-car" class="bm-input" value="${cfg.targetCar}">
+                    </div>
+                    <div style="flex:1">
+                        <div class="bm-label">فیلتر طرح (اختیاری)</div>
+                        <input id="cfg-keywords" class="bm-input" value="${cfg.planKeywords}" placeholder="مثلا: نقدی، آذر">
+                    </div>
+                </div>
+                <div class="bm-row">
+                    <div style="flex:1">
+                        <div class="bm-label">قیمت (اختیاری)</div>
+                        <input id="cfg-price" class="bm-input" value="${cfg.targetPrice}" placeholder="0 = همه">
+                    </div>
+                     <div style="flex:1">
+                        <div class="bm-label">اولویت رنگ</div>
+                        <input id="cfg-color" class="bm-input" value="${cfg.colorPriorities}">
+                    </div>
+                </div>
+                <div class="bm-row">
+                    <div style="flex:1">
+                        <div class="bm-label">استان</div>
+                        <select id="cfg-province" class="bm-select bm-input" style="text-align:right;padding-right:5px">
+                            ${getProvinceOptions(cfg.provinceId)}
+                        </select>
+                    </div>
+                    <div style="flex:1">
+                        <div class="bm-label">نام شهر</div>
+                        <input id="cfg-cityname" class="bm-input" value="${cfg.cityName}" placeholder="مثلا: برازجان">
+                    </div>
+                </div>
+
+                <button id="bm-start" class="bm-btn">شروع عملیات خرید</button>
+                <button id="bm-stop" class="bm-btn" style="background:#e65100;display:none">توقف</button>
+                <button id="bm-logout" class="bm-btn" style="background:#d32f2f;margin-top:5px">خروج</button>
+                <div id="bm-log-box" class="bm-log">آماده...</div>
+            </div>
+        `;
+        const toggle = (run) => {
+            isRunning = run;
+            document.getElementById('bm-start').style.display = run ? 'none' : 'block';
+            document.getElementById('bm-stop').style.display = run ? 'block' : 'none';
+        };
+        document.getElementById('bm-start').onclick = () => {
+            const newCfg = {
+                targetCar: document.getElementById('cfg-car').value.trim(),
+                planKeywords: document.getElementById('cfg-keywords').value.trim(),
+                targetPrice: document.getElementById('cfg-price').value.trim().replace(/[,،]/g, ''),
+                provinceId: document.getElementById('cfg-province').value,
+                cityName: document.getElementById('cfg-cityname').value.trim(),
+                bankName: DEFAULT_CONFIG.bankName,
+                colorPriorities: document.getElementById('cfg-color').value.trim()
+            };
+            saveUserConfig(newCfg);
+            toggle(true);
+            startBuyingFlow(newCfg).finally(() => toggle(false));
+        };
+
+        document.getElementById('bm-stop').onclick = () => {
+            log('🛑 توقف توسط کاربر');
+            toggle(false);
+        };
+
+        document.getElementById('bm-logout').onclick = () => {
+            localStorage.removeItem('bm_token');
+            localStorage.removeItem('bm_user');
+            localStorage.removeItem('bm_cookies');
+            renderLogin();
+        };
+    }
+
+    function askCaptcha(imgUrl) {
+        return new Promise(resolve => {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:200000;display:flex;justify-content:center;align-items:center";
+            overlay.innerHTML = `
+                <div style="background:#1A1B26;padding:20px;border-radius:12px;width:320px;text-align:center;border:1px solid #00e676;box-shadow:0 0 20px rgba(0,230,118,0.2)">
+                    <h3 style="color:#fff;margin:0 0 10px">کد امنیتی</h3>
+                    <img src="${imgUrl}" style="width:100%;border-radius:6px;background:#fff;height:70px;object-fit:contain;margin-bottom:10px">
+                    <div class="bm-status" id="cap-status" style="margin-bottom:5px;color:#aaa">حل خودکار...</div>
+                    <input id="pop-input" class="bm-input" style="font-size:20px;letter-spacing:3px" autocomplete="off">
+                    <button id="pop-btn" class="bm-btn" style="margin-top:10px">تایید</button>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            const inp = overlay.querySelector('#pop-input');
+            const status = overlay.querySelector('#cap-status');
+            const btn = overlay.querySelector('#pop-btn');
+
+            inp.focus();
+            const submit = () => {
+                const v = inp.value;
+                if(v) { overlay.remove(); resolve(v); }
+            };
+            btn.onclick = submit;
+            inp.onkeydown = e => { if(e.key === 'Enter') submit(); };
+            solveCaptcha(imgUrl).then(text => {
+                if (text) {
+                    inp.value = text;
+                    status.innerText = "✅ حل شد! ارسال...";
+                    status.style.color = "#00e676";
+                    setTimeout(submit, 300);
+                } else {
+                    status.innerText = "❌ حل نشد. دستی وارد کنید.";
+                    status.style.color = "#f44336";
+                }
+            });
+        });
+    }
+
+    async function startBuyingFlow(userConfig) {
+        try {
+            // 1. Find Product (Loop)
+            let product = null;
+            await retryUntilSuccess('جستجوی خودرو', async () => {
+                const homeRes = await request(`${API_BASE}/HomeItem/GetHomeItems?GetDataType=0`);
+                const items = homeRes.data || homeRes;
+                product = items.find(i => (i.title && i.title.includes(userConfig.targetCar)) || (i.titleDetails && i.titleDetails.includes(userConfig.targetCar)));
+                return product;
+            }, 1000);
+
+            log(`✅ محصول: ${product.title} (ID: ${product.id})`);
+
+            // 2. Find Plan (Loop)
+            let activeCirc = null;
+            await retryUntilSuccess('جستجوی بخشنامه', async () => {
+                const circRes = await request(`${API_BASE}/circulation/getCirculationData`, 'POST', {
+                    CarModelId: String(product.productGroup || product.id), getDataType: 0
+                });
+                const circs = circRes.data || circRes;
+
+                const activeCircs = circs.filter(c => (c.isOnSale === "1" || c.isOnSale === true) && c.circulationColors?.length > 0);
+                if (activeCircs.length === 0) return null;
+
+                // Filter Logic
+                const targetP = parseInt(userConfig.targetPrice);
+                const keywords = userConfig.planKeywords ? userConfig.planKeywords.split(/[,،\s]+/).filter(k => k.trim().length > 0).map(normalizePersian) : [];
+
+                if (targetP || keywords.length > 0) {
+                    activeCirc = activeCircs.find(c => {
+                        const titleNorm = normalizePersian(c.title + " " + (c.titleDetails || ""));
+                        let priceMatch = targetP > 0 ? (parseInt(c.basePrice) === targetP) : true;
+                        let keywordMatch = keywords.length > 0 ? keywords.every(k => titleNorm.includes(k)) : true;
+                        return priceMatch && keywordMatch;
+                    });
+                }
+
+                if (!activeCirc) activeCirc = activeCircs[0];
+                return activeCirc;
+            }, 1000);
+
+            log(`✅ بخشنامه: ${activeCirc.title}`);
+
+            // 3. Register Loop
+            let orderId = null;
+            while (isRunning && !orderId) {
+                try {
+                    // Captcha 1
+                    const cap1 = await getCaptcha();
+                    const cap1Val = await askCaptcha(cap1.url);
+                    if (!isRunning) return;
+
+                    log('🚀 ثبت سفارش...');
+                    const opts = (activeCirc.options || []).map(o => String(o.id));
+                    let selectedColor = null;
+                    const colors = activeCirc.circulationColors;
+                    const prefs = userConfig.colorPriorities.split(/[,،]/).map(s => normalizePersian(s));
+                    for (let pref of prefs) {
+                        if(!pref) continue;
+                        const found = colors.find(c => normalizePersian(c.plainColor).includes(pref));
+                        if (found) { selectedColor = found; break; }
+                    }
+                    if (!selectedColor) selectedColor = colors[0];
+                    const colorCodeForRegister = selectedColor.colorCode;
+                    const circIdForBranch = selectedColor.circulationId;
+
+                    const regPayload = {
+                        branchId: 0,
+                        cirId: String(activeCirc.id),
+                        crcl_Row: String(activeCirc.crcl_row || activeCirc.rowId),
+                        circOpIds: opts,
+                        color_code: String(colorCodeForRegister),
+                        count: 1,
+                        carVINNumber: "", carChassisNumber: "", carEngineNumber: "", carType: "", carName: "", capacity: "",
+                        captchaResponse: "",
+                        captchaToken: String(cap1.tid),
+                        captchaResult: String(cap1Val)
+                    };
+                    const regRes = await request(`${API_BASE}/order/register`, 'POST', regPayload);
+                    const orderData = regRes.data || regRes;
+                    if (orderData.id && orderData.id !== "0") {
+                        orderId = orderData.id;
+                        log(`✅ ثبت شد! ID: ${orderId}`);
+
+                        // --- FLOW AFTER REGISTRATION ---
+                        const banks = orderData.banks || [];
+                        let bank = banks[Math.floor(Math.random() * banks.length)];
+                        if(!bank) throw new Error('بانک یافت نشد');
+                        log(`🎲 بانک: ${bank.bankName}`);
+
+                        log('🏢 جستجوی نمایندگی...');
+                        await request(`${API_BASE}/branch/getCirculationBranchProvinceCity`, 'POST', {
+                            provinceId: String(userConfig.provinceId),
+                            circulationId: String(circIdForBranch)
+                        });
+                        const citiesRes = await request(`${API_BASE}/branch/getCirculationBranchProvinceCity`, 'POST', {
+                            provinceId: String(userConfig.provinceId), circulationId: String(circIdForBranch)
+                        });
+                        const cities = citiesRes.data || citiesRes;
+                        if(!cities || !cities.length) throw new Error('شهری یافت نشد');
+
+                        const targetCityName = normalizePersian(userConfig.cityName);
+                        let selectedCity = cities.find(c => normalizePersian(c.title).includes(targetCityName));
+                        let finalCityCode = selectedCity ? String(selectedCity.code || selectedCity.id) : String(cities[Math.floor(Math.random() * cities.length)].code || cities[0].id);
+                        log(`شهر: ${selectedCity ? selectedCity.title : 'تصادفی'}`);
+
+                        const branchRes = await request(`${API_BASE}/branch/getCirculationBranchCity`, 'POST', {
+                            cityCode: finalCityCode, circulationId: String(circIdForBranch)
+                        });
+                        const branches = branchRes.data || branchRes;
+
+                        if(!branches || !branches.length) {
+                            log('⚠️ نمایندگی یافت نشد. تلاش مجدد...');
+                            throw new Error('نمایندگی موجود نیست');
+                        }
+                        const branch = branches[0];
+                        const cap2 = await getCaptcha();
+                        const cap2Val = await askCaptcha(cap2.url);
+                        const fillRes = await request(`${API_BASE}/fillConfirm/post`, 'POST', {
+                            onlineshoppingId: String(orderId),
+                            bankName: bank.bankName,
+                            branchId: String(branch.id),
+                            ticket: 'no-ticket',
+                            captchaResponse: "",
+                            captchaToken: String(cap2.tid),
+                            captchaResult: String(cap2Val)
+                        });
+                        const fillData = fillRes.data || fillRes;
+                        if(!fillData.queueId) throw new Error('خطا در صف');
+                        log(`✅ در صف: ${fillData.queueId}`);
+
+                        await checkResultLoop(fillData.queueId, orderId);
+                        return;
+                    } else {
+                         if(orderData.errors) log(`⚠️ ${orderData.errors[0].errorDescription}`);
+                         else log('⚠️ ثبت ناموفق');
+                    }
+
+                } catch (e) {
+                    log(`⚠️ ${e}. تلاش مجدد...`);
+                    await sleep(1000);
+                }
+            }
+
+        } catch (e) {
+            log(`❌ خطای کلی: ${e}`);
+            toggleRunning(false);
+        }
+    }
+
+    async function checkResultLoop(queueId, orderId) {
+        let retries = 0;
+        while (isRunning && retries < 60) {
+             const check = await request(`${API_BASE}/bank/checkResult`, 'POST', { queueId: String(queueId), orderId: String(orderId) });
+             const d = check.data || check;
+             if(d.nextPageUrl) {
+                 log('🚀 انتقال به بانک...');
+                 window.location.href = d.nextPageUrl;
+                 return;
+             }
+             log(`⏳ در صف... (${retries})`);
+             await sleep(1000);
+             retries++;
+        }
+    }
+
+    // --- INIT ---
+    const t = localStorage.getItem('bm_token');
+    const u = localStorage.getItem('bm_user');
+    if (t && u) { try { renderDashboard(JSON.parse(u)); } catch { renderLogin(); } } else { renderLogin(); }
+
+})();
