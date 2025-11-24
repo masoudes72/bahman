@@ -1,823 +1,851 @@
 // ==UserScript==
-// @name         Bahman Auto Buyer (Mobile Optimized + Update)
+// @name         Bahman Auto Buyer - Network Visible Edition
 // @namespace    https://bahman.iranecar.com/
-// @version      2025-11-21-MobileUI
-// @description  Full automation optimized for Mobile screens (Kiwi Browser/Safari Userscripts)
+// @version      2025.11.25.FetchFix
+// @description  Bahman Motors auto buyer refactored to use FETCH for Network visibility (CORS Fixed).
 // @author       You
 // @match        https://bahman.iranecar.com/*
-// @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
-// @connect      bahmanapi2.iranecar.com
-// @connect      recaptchag.iranecar.com
-// @connect      siapa-bahman.viiona.ir
-// @connect      github.com
+// @run-at       document-idle
 // ==/UserScript==
 
 (function () {
     'use strict';
 
-    // تنظیمات ثابت و آدرس‌ها
+    // -------------------------------------------------
+    // Static configuration
+    // -------------------------------------------------
+    const SCRIPT = {
+        NAME: 'Bahman Auto Buyer (Fetch)',
+        VERSION: '2025.11.25.FetchFix',
+        STORAGE_PREFIX: 'bm'
+    };
+
+    const API = {
+        BASE: 'https://bahmanapi2.iranecar.com/api/v1',
+        CAPTCHA: 'https://recaptchag.iranecar.com/api',
+        SOLVER: 'https://siapa-bahman.viiona.ir/solve',
+        ENDPOINTS: {
+            LOGIN: '/identity/login',
+            HOME: '/HomeItem/GetHomeItems?GetDataType=0',
+            CIRCULATION: '/circulation/getCirculationData',
+            REGISTER: '/order/register',
+            FILL_CONFIRM: '/fillConfirm/post',
+            BANK_CHECK: '/bank/checkResult',
+            BRANCH_PROVINCE: '/branch/getCirculationBranchProvinceCity',
+            BRANCH_CITY: '/branch/getCirculationBranchCity'
+        }
+    };
+
     const PROVINCES = [
-        { id: "1", title: "آذربایجان شرقی" }, { id: "2", title: "آذربایجان غربی" }, { id: "3", title: "اردبیل" },
-        { id: "4", title: "ایلام" }, { id: "5", title: "اصفهان" }, { id: "6", title: "بوشهر" },
-        { id: "7", title: "تهران" }, { id: "8", title: "چهارمحال بختیاری" }, { id: "9", title: "خراسان شمالی" },
-        { id: "10", title: "خراسان رضوی" }, { id: "11", title: "خراسان جنوبی" }, { id: "12", title: "خوزستان" },
-        { id: "13", title: "زنجان" }, { id: "14", title: "سمنان" }, { id: "15", title: "سیستان و بلوچستان" },
-        { id: "16", title: "فارس" }, { id: "17", title: "قزوین" }, { id: "19", title: "کرمان" },
-        { id: "20", title: "کرمانشاه" }, { id: "21", title: "کهگیلویه و بویراحمد" }, { id: "22", title: "گلستان" },
-        { id: "23", title: "گیلان" }, { id: "24", title: "مازندران" }, { id: "25", title: "مرکزی" },
-        { id: "26", title: "هرمزگان" }, { id: "27", title: "همدان" }, { id: "28", title: "یزد" },
-        { id: "29", title: "کردستان" }, { id: "30", title: "لرستان" }, { id: "31", title: "البرز" },
-        { id: "33", title: "قم" }, { id: "34", title: "سایر" }
+        { id: '1', title: 'آذربایجان شرقی' }, { id: '2', title: 'آذربایجان غربی' }, { id: '3', title: 'اردبیل' },
+        { id: '4', title: 'ایلام' }, { id: '5', title: 'اصفهان' }, { id: '6', title: 'بوشهر' },
+        { id: '7', title: 'تهران' }, { id: '8', title: 'چهارمحال بختیاری' }, { id: '9', title: 'خراسان شمالی' },
+        { id: '10', title: 'خراسان رضوی' }, { id: '11', title: 'خراسان جنوبی' }, { id: '12', title: 'خوزستان' },
+        { id: '13', title: 'زنجان' }, { id: '14', title: 'سمنان' }, { id: '15', title: 'سیستان و بلوچستان' },
+        { id: '16', title: 'فارس' }, { id: '17', title: 'قزوین' }, { id: '19', title: 'کرمان' },
+        { id: '20', title: 'کرمانشاه' }, { id: '21', title: 'کهگیلویه و بویراحمد' }, { id: '22', title: 'گلستان' },
+        { id: '23', title: 'گیلان' }, { id: '24', title: 'مازندران' }, { id: '25', title: 'مرکزی' },
+        { id: '26', title: 'هرمزگان' }, { id: '27', title: 'همدان' }, { id: '28', title: 'یزد' },
+        { id: '29', title: 'کردستان' }, { id: '30', title: 'لرستان' }, { id: '31', title: 'البرز' },
+        { id: '33', title: 'قم' }, { id: '34', title: 'سایر' }
     ];
 
     const DEFAULT_CONFIG = {
         targetCar: 'دیگنیتی',
         targetPrice: '',
-        planKeywords: '',
         provinceId: '7',
         cityName: 'تهران',
         bankName: 'ParsianKarafarin',
         colorPriorities: 'سفید, مشکی'
     };
 
-    const API_BASE = "https://bahmanapi2.iranecar.com/api/v1";
-    const CAPTCHA_BASE = "https://recaptchag.iranecar.com/api";
-    const SOLVER_URL = "https://siapa-bahman.viiona.ir/solve";
-    const UPDATE_URL = "https://github.com/masoudes72/bahman/raw/refs/heads/main/bahman.user.js";
-
-    const HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
-        "Accept": "application/json",
-        "Accept-Language": "fa-IR,fa;q=0.9",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-site",
-        "Priority": "u=4"
+    const SOUND_URLS = {
+        queueFull: 'https://www.soundjay.com/mechanical/sounds/gun-cocking-01.mp3',
+        success: 'https://www.soundjay.com/misc/sounds/magic-chime-01.mp3'
     };
 
-    // --- استایل‌های بهینه شده برای موبایل ---
-    const styles = `
-        /* کانتینر اصلی: ریسپانسیو */
-        .bm-container {
-            position: fixed;
-            top: 10px;
-            left: 50%;
-            transform: translateX(-50%); /* وسط چین */
-            width: 95%; /* عرض 95 درصد برای موبایل */
-            max-width: 400px; /* حداکثر عرض برای تبلت */
-            max-height: 90vh; /* جلوگیری از بلندتر شدن از صفحه */
-            overflow-y: auto; /* اسکرول در صورت نیاز */
-            background: #121212;
-            color: #e0e0e0;
-            border: 1px solid #333;
-            border-radius: 12px;
-            z-index: 100000;
-            font-family: 'Tahoma', sans-serif;
-            direction: rtl;
-            text-align: right;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.9);
-            font-size: 14px; /* فونت کمی بزرگتر */
-            display: none;
+    const BASE_HEADERS = {
+        'Accept': 'application/json',
+        'Accept-Language': 'fa-IR,fa;q=0.9'
+    };
+
+    // -------------------------------------------------
+    // Utilities
+    // -------------------------------------------------
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const normalizePersian = (str = '') => str.toString().replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\s+/g, ' ').trim().toLowerCase();
+    const appendRnd = (url) => `${url}${url.includes('?') ? '&' : '?'}rnd=${Math.random()}`;
+
+    const parseJSON = (payload, fallback = null) => {
+        try { return JSON.parse(payload); } catch { return fallback; }
+    };
+
+    // -------------------------------------------------
+    // Storage helpers
+    // -------------------------------------------------
+    const Store = {
+        getVisitorId() {
+            let id = localStorage.getItem('VisitorId');
+            if (!id) {
+                id = `${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
+                localStorage.setItem('VisitorId', id);
+            }
+            return id;
+        },
+        getToken() { return localStorage.getItem('bm_token'); },
+        setToken(token) { if (!token) localStorage.removeItem('bm_token'); else localStorage.setItem('bm_token', token); },
+        getUser() { return parseJSON(localStorage.getItem('bm_user')); },
+        setUser(user) { if (!user) localStorage.removeItem('bm_user'); else localStorage.setItem('bm_user', JSON.stringify(user)); },
+        getCookies() { return localStorage.getItem('bm_cookies') || ''; },
+        setCookies(cookie) { if (cookie) localStorage.setItem('bm_cookies', cookie); },
+        getConfig() {
+            return {
+                targetCar: localStorage.getItem('bm_cfg_car') || DEFAULT_CONFIG.targetCar,
+                targetPrice: localStorage.getItem('bm_cfg_price') || DEFAULT_CONFIG.targetPrice,
+                provinceId: localStorage.getItem('bm_cfg_province') || DEFAULT_CONFIG.provinceId,
+                cityName: localStorage.getItem('bm_cfg_cityname') || DEFAULT_CONFIG.cityName,
+                bankName: localStorage.getItem('bm_cfg_bank') || DEFAULT_CONFIG.bankName,
+                colorPriorities: localStorage.getItem('bm_cfg_colors') || DEFAULT_CONFIG.colorPriorities
+            };
+        },
+        saveConfig(cfg) {
+            localStorage.setItem('bm_cfg_car', cfg.targetCar);
+            localStorage.setItem('bm_cfg_price', cfg.targetPrice);
+            localStorage.setItem('bm_cfg_province', cfg.provinceId);
+            localStorage.setItem('bm_cfg_cityname', cfg.cityName);
+            localStorage.setItem('bm_cfg_bank', cfg.bankName);
+            localStorage.setItem('bm_cfg_colors', cfg.colorPriorities);
+        },
+        clearSession() {
+            localStorage.removeItem('bm_token');
+            localStorage.removeItem('bm_user');
+        },
+        soundEnabled() {
+            const val = localStorage.getItem('bm_sound_enabled');
+            return val === null ? true : val === 'true';
+        },
+        setSound(flag) { localStorage.setItem('bm_sound_enabled', flag ? 'true' : 'false'); }
+    };
+
+    // -------------------------------------------------
+    // Logger + audio bus
+    // -------------------------------------------------
+    class UILogger {
+        constructor() {
+            this.targetId = null;
         }
-
-        .bm-header {
-            background: #1a1a1a;
-            padding: 15px;
-            border-bottom: 1px solid #333;
-            font-weight: bold;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-radius: 12px 12px 0 0;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
-
-        /* دکمه‌های شناور - کمی بالاتر برای موبایل */
-        #bm-controls {
-            position: fixed;
-            bottom: 80px; /* بالاتر برای جلوگیری از تداخل با منوی مرورگر موبایل */
-            right: 15px;
-            z-index: 99999;
-            display: flex;
-            flex-direction: column-reverse;
-            gap: 12px;
-        }
-        .bm-float-btn {
-            width: 55px; /* دکمه بزرگتر برای لمس */
-            height: 55px;
-            border-radius: 50%;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
-            border: 2px solid #fff;
-            transition: transform 0.2s;
-        }
-        .bm-float-btn:active { transform: scale(0.9); }
-        .bm-float-btn span { font-size: 26px; }
-
-        #bm-floater-main { background: linear-gradient(135deg, #00c853, #64dd17); }
-        #bm-floater-net { background: linear-gradient(135deg, #2979ff, #29b6f6); }
-        #bm-floater-update { background: linear-gradient(135deg, #ff9100, #ffea00); }
-
-        .bm-close-btn { cursor: pointer; color: #ff5252; font-size: 22px; padding: 5px; } /* بزرگتر برای تاچ */
-
-        .bm-content { padding: 15px; display: flex; flex-direction: column; gap: 12px; }
-
-        /* ورودی‌ها بزرگتر برای تایپ راحت‌تر */
-        .bm-input, .bm-select {
-            background: #252525;
-            border: 1px solid #444;
-            color: #fff;
-            padding: 12px; /* پدینگ بیشتر */
-            border-radius: 8px;
-            width: 100%;
-            box-sizing: border-box;
-            text-align: center;
-            font-size: 16px; /* فونت بزرگتر برای جلوگیری از زوم خودکار آیفون */
-            outline: none;
-            margin-top: 3px;
-        }
-        .bm-select { text-align: right; padding-right: 10px; }
-        .bm-input:focus, .bm-select:focus { border-color: #00e676; background: #2a2a2a; }
-
-        .bm-label { font-size: 12px; color: #aaa; margin-right: 5px; margin-bottom: 2px; }
-
-        .bm-btn {
-            background: linear-gradient(135deg, #00c853, #64dd17);
-            color: #000;
-            border: none;
-            padding: 14px; /* دکمه بلندتر */
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: bold;
-            width: 100%;
-            font-size: 16px;
-        }
-        .bm-btn:disabled { background: #424242; color: #888; }
-
-        .bm-captcha-img { width: 100%; height: 70px; object-fit: contain; background: #fff; border-radius: 6px; cursor: pointer; border: 2px solid #444; }
-
-        .bm-log {
-            background: #000;
-            color: #00e676;
-            padding: 10px;
-            border-radius: 6px;
-            font-family: monospace;
-            font-size: 12px;
-            height: 120px;
-            overflow-y: auto;
-            border: 1px solid #333;
-        }
-
-        .bm-row { display: flex; gap: 10px; flex-wrap: wrap; } /* Wrap برای صفحه‌های خیلی کوچک */
-        .bm-row > div { min-width: 45%; flex: 1; }
-
-        /* Network Monitor Panel Mobile */
-        .bm-net-panel {
-            position: fixed;
-            bottom: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 95%;
-            height: 40vh; /* ارتفاع کمتر */
-            background: #0d1117;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            z-index: 99998;
-            display: none;
-            flex-direction: column;
-            box-shadow: 0 -5px 20px rgba(0,0,0,0.8);
-            font-family: monospace;
-            font-size: 11px;
-            color: #c9d1d9;
-        }
-        .bm-net-header { padding: 8px 10px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
-        .bm-net-body { flex: 1; overflow-y: auto; padding: 5px; }
-        .bm-net-row { display: flex; border-bottom: 1px solid #21262d; padding: 8px 0; }
-        .bm-net-url { flex: 1; overflow: hidden; text-overflow: ellipsis; padding: 0 5px; }
-
-        /* کلاس‌های کمکی رنگ */
-        .status-200 { color: #3fb950; }
-        .status-400 { color: #f85149; }
-        .method-GET { color: #58a6ff; }
-        .method-POST { color: #d29922; }
-    `;
-
-    const styleSheet = document.createElement("style");
-    styleSheet.innerText = styles;
-    document.head.appendChild(styleSheet);
-
-    // --- State ---
-    let currentVisitorId = localStorage.getItem('VisitorId') || (Math.random().toString(16).slice(2) + Date.now().toString(16));
-    localStorage.setItem('VisitorId', currentVisitorId);
-    let storedCookies = localStorage.getItem('bm_cookies') || '';
-    let loginCapToken = null;
-    let isRunning = false;
-
-    // توابع کمکی
-    function normalizePersian(str) {
-        if (!str) return "";
-        return str.toString().replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\s+/g, ' ').trim().toLowerCase();
-    }
-
-    function getUserConfig() {
-        return {
-            targetCar: localStorage.getItem('bm_cfg_car') || DEFAULT_CONFIG.targetCar,
-            targetPrice: localStorage.getItem('bm_cfg_price') || DEFAULT_CONFIG.targetPrice,
-            planKeywords: localStorage.getItem('bm_cfg_keywords') || DEFAULT_CONFIG.planKeywords,
-            provinceId: localStorage.getItem('bm_cfg_province') || DEFAULT_CONFIG.provinceId,
-            cityName: localStorage.getItem('bm_cfg_cityname') || DEFAULT_CONFIG.cityName,
-            bankName: localStorage.getItem('bm_cfg_bank') || DEFAULT_CONFIG.bankName,
-            colorPriorities: localStorage.getItem('bm_cfg_colors') || DEFAULT_CONFIG.colorPriorities
-        };
-    }
-
-    function saveUserConfig(cfg) {
-        localStorage.setItem('bm_cfg_car', cfg.targetCar);
-        localStorage.setItem('bm_cfg_price', cfg.targetPrice);
-        localStorage.setItem('bm_cfg_keywords', cfg.planKeywords);
-        localStorage.setItem('bm_cfg_province', cfg.provinceId);
-        localStorage.setItem('bm_cfg_cityname', cfg.cityName);
-        localStorage.setItem('bm_cfg_bank', cfg.bankName);
-        localStorage.setItem('bm_cfg_colors', cfg.colorPriorities);
-    }
-
-    function log(msg) {
-        console.log(`[BahmanBot] ${msg}`);
-        const el = document.getElementById('bm-log-box');
-        if (el) {
+        attach(elementId) { this.targetId = elementId; }
+        push(message, level = 'info') {
             const time = new Date().toLocaleTimeString('fa-IR');
-            el.innerHTML += `<div style="border-bottom:1px solid #222;padding:2px 0;">[${time}] ${msg}</div>`;
+            const consoleMethod = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log';
+            console[consoleMethod](`[${SCRIPT.NAME}] ${message}`);
+            if (!this.targetId) return;
+            const el = document.getElementById(this.targetId);
+            if (!el) return;
+            el.innerHTML += `<div style="border-bottom:1px solid #1f1f1f;padding:2px 0"><span style="color:#999">[${time}]</span> ${message}</div>`;
             el.scrollTop = el.scrollHeight;
         }
     }
 
-    function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-
-    // --- Network Monitor ---
-    function initMonitor() {
-        if (document.querySelector('.bm-net-panel')) return;
-        const div = document.createElement('div');
-        div.className = 'bm-net-panel';
-        div.id = 'bm-net-panel';
-        div.innerHTML = `
-            <div class="bm-net-header">
-                <span style="font-size:14px">🌐 Network</span>
-                <span class="bm-close-btn" onclick="document.getElementById('bm-net-panel').style.display='none'; document.getElementById('bm-floater-net').style.display='flex';">✖</span>
-            </div>
-            <div class="bm-net-body" id="bm-net-list"></div>
-        `;
-        document.body.appendChild(div);
-    }
-
-    function logNetwork(method, url, status, time, reqData, resData) {
-        const list = document.getElementById('bm-net-list');
-        if (!list) return;
-
-        const row = document.createElement('div');
-        row.className = 'bm-net-row';
-        const cleanUrl = url.replace(API_BASE, '').split('?')[0];
-        const statusClass = status >= 200 && status < 300 ? 'status-200' : 'status-400';
-        row.innerHTML = `
-            <div class="bm-net-method method-${method}" style="width:40px;font-weight:bold">${method}</div>
-            <div class="bm-net-status ${statusClass}" style="width:35px">${status}</div>
-            <div class="bm-net-url">${cleanUrl}</div>
-        `;
-        row.onclick = () => {
-            console.log('URL:', url);
-            console.log('Req:', reqData);
-            console.log('Res:', resData);
-            alert(`Status: ${status}\nUrl: ${cleanUrl}\nCheck console for details.`);
-        };
-        list.appendChild(row);
-        list.scrollTop = list.scrollHeight;
-    }
-
-    // --- Request Engine ---
-    function request(url, method = 'GET', data = null, auth = true) {
-        return new Promise((resolve, reject) => {
-            const headers = { ...HEADERS };
-            headers['VisitorId'] = currentVisitorId;
-            if (storedCookies) headers['Cookie'] = storedCookies;
-
-            if (auth) {
-                const tokenData = localStorage.getItem('bm_token');
-                if (tokenData) {
-                    try {
-                        if (tokenData.startsWith('{')) {
-                            const parsed = JSON.parse(tokenData);
-                            headers['Authorization'] = `Bearer ${parsed.token || parsed}`;
-                        } else {
-                            headers['Authorization'] = `Bearer ${tokenData}`;
-                        }
-                    } catch (e) { headers['Authorization'] = `Bearer ${tokenData}`; }
-                }
-            }
-
-            if (method === 'GET') delete headers['Content-Type'];
-            else headers['Content-Type'] = 'application/json';
-
-            const fullUrl = `${url}${url.includes('?') ? '&' : '?'}rnd=${Math.random()}`;
-            const startTime = Date.now();
-            const reqBody = data ? JSON.stringify(data) : null;
-
-            GM_xmlhttpRequest({
-                method: method,
-                url: fullUrl,
-                headers: headers,
-                data: reqBody,
-                onload: function(response) {
-                    logNetwork(method, url, response.status, Date.now() - startTime, reqBody, response.responseText);
-
-                    const setCookie = response.responseHeaders.match(/^set-cookie:\s*(.*)$/gim);
-                    if (setCookie) {
-                        storedCookies = setCookie.map(c => c.replace(/^set-cookie:\s*/i, '').split(';')[0]).join('; ');
-                        localStorage.setItem('bm_cookies', storedCookies);
-                    }
-
-                    if (response.status === 401) {
-                        log('❌ نشست منقضی شد.');
-                        localStorage.removeItem('bm_token');
-                        isRunning = false;
-                        renderLogin();
-                        reject('401');
-                        return;
-                    }
-
-                    if (response.status >= 200 && response.status < 300) {
-                        try { resolve(JSON.parse(response.responseText)); } catch { resolve(response.responseText); }
-                    } else {
-                        try {
-                            const json = JSON.parse(response.responseText);
-                            reject(json.errors?.[0]?.errorDescription || json.message || `Status ${response.status}`);
-                        } catch { reject(`Status ${response.status}`); }
-                    }
-                },
-                onerror: function() {
-                    logNetwork(method, url, 0, 0, reqBody, 'Net Error');
-                    reject('Network Error');
-                }
-            });
-        });
-    }
-
-    function getCaptcha() {
-        return new Promise((resolve, reject) => {
-            GM_xmlhttpRequest({
-                method: 'GET',
-                url: `${CAPTCHA_BASE}/Captcha/GetCaptchaImage2?visitorId=${currentVisitorId}&t=${Math.random()}`,
-                headers: { ...HEADERS, 'Accept': '*/*' },
-                responseType: 'blob',
-                onload: function(res) {
-                    if (res.status === 200) {
-                        const t = res.responseHeaders.match(/token-id:\s*(.*)/i);
-                        const url = URL.createObjectURL(res.response);
-                        resolve({ url, tid: t ? t[1].trim() : null });
-                    } else reject('Captcha Error');
-                }
-            });
-        });
-    }
-
-    async function solveCaptcha(blobUrl) {
-        try {
-            const res = await fetch(blobUrl);
-            const blob = await res.blob();
-            const formData = new FormData();
-            formData.append('file', blob, 'image.jpg');
-            return new Promise((resolve) => {
-                GM_xmlhttpRequest({
-                    method: "POST",
-                    url: SOLVER_URL,
-                    data: formData,
-                    onload: (response) => {
-                        try {
-                            const json = JSON.parse(response.responseText);
-                            resolve(json.text || json.result || null);
-                        } catch { resolve(null); }
-                    },
-                    onerror: () => resolve(null)
-                });
-            });
-        } catch { return null; }
-    }
-
-    async function retryUntilSuccess(taskName, taskFn, delay = 1000) {
-        while (isRunning) {
-            try {
-                const result = await taskFn();
-                if (result) return result;
-                log(`⏳ ${taskName}...`);
-            } catch (e) {
-                if (String(e).includes('401')) return null;
-                log(`⚠️ ${taskName}: ${e}`);
-            }
-            await sleep(delay);
-        }
-        return null;
-    }
-
-    // --- UI Logic ---
-    function toggleMain(show) {
-        const panel = document.querySelector('.bm-container');
-        const btn = document.getElementById('bm-floater-main');
-        if(show) {
-            if(panel) panel.style.display = 'block';
-            if(btn) btn.style.display = 'none';
-        } else {
-            if(panel) panel.style.display = 'none';
-            if(btn) btn.style.display = 'flex';
-        }
-    }
-
-    function toggleNet(show) {
-        const panel = document.getElementById('bm-net-panel');
-        const btn = document.getElementById('bm-floater-net');
-        if(show) {
-            if(panel) panel.style.display = 'flex';
-            if(btn) btn.style.display = 'none';
-        } else {
-            if(panel) panel.style.display = 'none';
-            if(btn) btn.style.display = 'flex';
-        }
-    }
-
-    function createFloaters() {
-        if (document.getElementById('bm-controls')) return;
-        const con = document.createElement('div');
-        con.id = 'bm-controls';
-
-        const btnMain = document.createElement('div');
-        btnMain.className = 'bm-float-btn';
-        btnMain.id = 'bm-floater-main';
-        btnMain.innerHTML = '<span>🤖</span>';
-        btnMain.onclick = () => toggleMain(true);
-
-        const btnNet = document.createElement('div');
-        btnNet.className = 'bm-float-btn';
-        btnNet.id = 'bm-floater-net';
-        btnNet.innerHTML = '<span>🌐</span>';
-        btnNet.onclick = () => toggleNet(true);
-
-        const btnUpdate = document.createElement('div');
-        btnUpdate.className = 'bm-float-btn';
-        btnUpdate.id = 'bm-floater-update';
-        btnUpdate.innerHTML = '<span>🔄</span>';
-        btnUpdate.onclick = () => { if(confirm('بروزرسانی؟')) window.open(UPDATE_URL, '_blank'); };
-
-        con.appendChild(btnMain);
-        con.appendChild(btnNet);
-        con.appendChild(btnUpdate);
-        document.body.appendChild(con);
-    }
-
-    function createUI() {
-        const exist = document.querySelector('.bm-container');
-        if (exist) exist.remove();
-        initMonitor();
-        createFloaters();
-        const div = document.createElement('div');
-        div.className = 'bm-container';
-        document.body.appendChild(div);
-        toggleMain(true);
-        toggleNet(false); // در موبایل پیش فرض بسته باشد بهتر است
-        return div;
-    }
-
-    function renderLogin() {
-        const div = createUI();
-        div.innerHTML = `
-            <div class="bm-header">
-                <span>🔐 ورود موبایل</span>
-                <span class="bm-close-btn" onclick="document.querySelector('.bm-container').style.display='none'; document.getElementById('bm-floater-main').style.display='flex';">✖</span>
-            </div>
-            <div class="bm-content">
-                <input id="bm-user" class="bm-input" type="tel" placeholder="کد ملی">
-                <input id="bm-pass" type="password" class="bm-input" placeholder="رمز عبور">
-                <div style="text-align:center;cursor:pointer" id="bm-cap-box"><small>Loading...</small></div>
-                <input id="bm-cap-input" class="bm-input" type="tel" placeholder="کد امنیتی">
-                <button id="bm-login-btn" class="bm-btn">ورود</button>
-                <div id="bm-log-box" class="bm-log">منتظر ورود...</div>
-            </div>
-        `;
-        const refresh = async () => {
-            const box = document.getElementById('bm-cap-box');
-            const inp = document.getElementById('bm-cap-input');
-            box.innerHTML = '<small>...</small>';
-            try {
-                const cap = await getCaptcha();
-                loginCapToken = cap.tid;
-                box.innerHTML = `<img src="${cap.url}" class="bm-captcha-img">`;
-                box.onclick = refresh;
-                inp.placeholder = "حل خودکار...";
-                const txt = await solveCaptcha(cap.url);
-                if(txt) { inp.value = txt; inp.style.borderColor = '#00e676'; }
-            } catch { box.innerHTML = 'خطا در لود'; }
-        };
-        refresh();
-        document.getElementById('bm-login-btn').onclick = async () => {
-            const u = document.getElementById('bm-user').value;
-            const p = document.getElementById('bm-pass').value;
-            const c = document.getElementById('bm-cap-input').value;
-            if (!u || !p || !c) return log('فیلدها خالی است');
-
-            log('🔄 در حال ورود...');
-            try {
-                const res = await request(`${API_BASE}/identity/login`, 'POST', {
-                    nationalCode: u, password: p, captchaResult: c, captchaToken: loginCapToken, captchaResponse: ""
-                }, false);
-
-                let token = res.token?.token || res.data?.token?.token;
-                let user = res.customer || res.data?.customer;
-
-                if (token) {
-                    log('✅ ورود موفق!');
-                    localStorage.setItem('bm_token', JSON.stringify(res.token || res.data.token));
-                    if(user) localStorage.setItem('bm_user', JSON.stringify(user));
-                    renderDashboard(user);
-                } else {
-                    log('❌ ' + (res.message || 'خطا در ورود'));
-                    refresh();
-                }
-            } catch (e) { log('❌ ' + e); refresh(); }
-        };
-    }
-
-    function getProvinceOptions(selectedId) {
-        return PROVINCES.map(p =>
-            `<option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>${p.title}</option>`
-        ).join('');
-    }
-
-    function renderDashboard(user) {
-        const div = createUI();
-        const cfg = getUserConfig();
-        const name = user ? `${user.firstName} ${user.lastName}` : 'کاربر';
-        div.innerHTML = `
-            <div class="bm-header">
-                <div>
-                    <span>🏎️ خرید موبایل</span>
-                    <br><span style="font-size:11px;color:#00e676">${name}</span>
-                </div>
-                <span class="bm-close-btn" onclick="document.querySelector('.bm-container').style.display='none'; document.getElementById('bm-floater-main').style.display='flex';">✖</span>
-            </div>
-            <div class="bm-content">
-                <div class="bm-row">
-                    <div>
-                        <div class="bm-label">خودرو</div>
-                        <input id="cfg-car" class="bm-input" value="${cfg.targetCar}">
-                    </div>
-                    <div>
-                        <div class="bm-label">فیلتر (اختیاری)</div>
-                        <input id="cfg-keywords" class="bm-input" value="${cfg.planKeywords}">
-                    </div>
-                </div>
-                <div class="bm-row">
-                    <div>
-                        <div class="bm-label">قیمت</div>
-                        <input id="cfg-price" class="bm-input" type="tel" value="${cfg.targetPrice}">
-                    </div>
-                     <div>
-                        <div class="bm-label">رنگ‌ها</div>
-                        <input id="cfg-color" class="bm-input" value="${cfg.colorPriorities}">
-                    </div>
-                </div>
-                <div class="bm-row">
-                    <div>
-                        <div class="bm-label">استان</div>
-                        <select id="cfg-province" class="bm-select bm-input">
-                            ${getProvinceOptions(cfg.provinceId)}
-                        </select>
-                    </div>
-                    <div>
-                        <div class="bm-label">شهر</div>
-                        <input id="cfg-cityname" class="bm-input" value="${cfg.cityName}">
-                    </div>
-                </div>
-
-                <button id="bm-start" class="bm-btn">شروع خرید</button>
-                <button id="bm-stop" class="bm-btn" style="background:#e65100;display:none">توقف</button>
-                <button id="bm-logout" class="bm-btn" style="background:#d32f2f;margin-top:5px">خروج</button>
-                <div id="bm-log-box" class="bm-log">آماده...</div>
-            </div>
-        `;
-        const toggle = (run) => {
-            isRunning = run;
-            document.getElementById('bm-start').style.display = run ? 'none' : 'block';
-            document.getElementById('bm-stop').style.display = run ? 'block' : 'none';
-        };
-        document.getElementById('bm-start').onclick = () => {
-            const newCfg = {
-                targetCar: document.getElementById('cfg-car').value.trim(),
-                planKeywords: document.getElementById('cfg-keywords').value.trim(),
-                targetPrice: document.getElementById('cfg-price').value.trim().replace(/[,،]/g, ''),
-                provinceId: document.getElementById('cfg-province').value,
-                cityName: document.getElementById('cfg-cityname').value.trim(),
-                bankName: DEFAULT_CONFIG.bankName,
-                colorPriorities: document.getElementById('cfg-color').value.trim()
+    class SoundBus {
+        constructor() {
+            this.enabled = Store.soundEnabled();
+            this.registry = {
+                queueFull: new Audio(SOUND_URLS.queueFull),
+                success: new Audio(SOUND_URLS.success)
             };
-            saveUserConfig(newCfg);
-            toggle(true);
-            startBuyingFlow(newCfg).finally(() => toggle(false));
-        };
-        document.getElementById('bm-stop').onclick = () => { log('🛑 توقف کاربر'); toggle(false); };
-        document.getElementById('bm-logout').onclick = () => {
-            localStorage.clear();
-            renderLogin();
-        };
+            Object.values(this.registry).forEach((audio) => { audio.volume = 1.0; });
+        }
+        toggle(flag) { this.enabled = flag; Store.setSound(flag); }
+        play(name) {
+            if (!this.enabled) return;
+            const audio = this.registry[name];
+            if (audio) audio.play().catch(() => {});
+        }
     }
 
-    function askCaptcha(imgUrl) {
-        return new Promise(resolve => {
-            const overlay = document.createElement('div');
-            overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:200000;display:flex;justify-content:center;align-items:center";
-            overlay.innerHTML = `
-                <div style="background:#1A1B26;padding:20px;border-radius:12px;width:90%;max-width:350px;text-align:center;border:1px solid #00e676;">
-                    <h3 style="color:#fff;margin:0 0 10px">کد امنیتی</h3>
-                    <img src="${imgUrl}" style="width:100%;border-radius:6px;background:#fff;height:80px;object-fit:contain;margin-bottom:10px">
-                    <div id="cap-status" style="margin-bottom:5px;color:#aaa">حل خودکار...</div>
-                    <input id="pop-input" class="bm-input" type="tel" style="font-size:24px;letter-spacing:5px" autocomplete="off">
-                    <button id="pop-btn" class="bm-btn" style="margin-top:10px">تایید</button>
+    // -------------------------------------------------
+    // Network monitor
+    // -------------------------------------------------
+    class NetworkMonitor {
+        constructor() {
+            this.ensurePanel();
+        }
+        ensurePanel() {
+            if (document.getElementById('bm-net-panel')) return;
+            const div = document.createElement('div');
+            div.className = 'bm-net-panel';
+            div.id = 'bm-net-panel';
+            div.innerHTML = `
+                <div class="bm-net-header">
+                    <span>🌐 Network Log (Fetch Mode)</span>
+                    <span class="bm-close-btn" data-close-net>✖</span>
                 </div>
+                <div class="bm-net-body" id="bm-net-list"></div>
             `;
-            document.body.appendChild(overlay);
-            const inp = overlay.querySelector('#pop-input');
-            const status = overlay.querySelector('#cap-status');
-            const btn = overlay.querySelector('#pop-btn');
-
-            inp.focus();
-            const submit = () => { if(inp.value) { overlay.remove(); resolve(inp.value); } };
-            btn.onclick = submit;
-            inp.onkeydown = e => { if(e.key === 'Enter') submit(); };
-
-            solveCaptcha(imgUrl).then(text => {
-                if (text) {
-                    inp.value = text;
-                    status.innerText = "✅ حل شد!";
-                    status.style.color = "#00e676";
-                    setTimeout(submit, 500);
-                } else {
-                    status.innerText = "❌ دستی وارد کنید";
-                    status.style.color = "#f44336";
-                }
+            document.body.appendChild(div);
+            div.querySelector('[data-close-net]').addEventListener('click', () => this.hide());
+        }
+        panel() { return document.getElementById('bm-net-panel'); }
+        list() { return document.getElementById('bm-net-list'); }
+        show() { const panel = this.panel(); if (panel) panel.style.display = 'flex'; }
+        hide() { const panel = this.panel(); if (panel) panel.style.display = 'none'; }
+        toggle() { const panel = this.panel(); if (!panel) return; panel.style.display = panel.style.display === 'flex' ? 'none' : 'flex'; }
+        record({ method, url, status, duration, requestBody, responseBody }) {
+            const list = this.list();
+            if (!list) return;
+            const row = document.createElement('div');
+            row.className = 'bm-net-row';
+            const statusClass = status >= 200 && status < 300 ? 'status-200' : 'status-400';
+            const cleanUrl = url.replace(API.BASE, '.../api');
+            row.innerHTML = `
+                <div class="bm-net-method method-${method}" style="width:45px">${method}</div>
+                <div class="bm-net-status ${statusClass}" style="width:45px">${status}</div>
+                <div class="bm-net-url" title="${url}">${cleanUrl}</div>
+                <div style="width:50px;text-align:right">${duration}ms</div>
+            `;
+            row.addEventListener('click', () => {
+                alert(`URL: ${url}\nStatus: ${status}\nTime: ${duration}ms\n\nRequest:\n${requestBody || '-'}\n\nResponse:\n${(responseBody || '').slice(0, 500)}...`);
             });
-        });
+            list.appendChild(row);
+            list.scrollTop = list.scrollHeight;
+        }
     }
 
-    async function startBuyingFlow(userConfig) {
-        try {
-            let product = null;
-            await retryUntilSuccess('جستجوی خودرو', async () => {
-                const homeRes = await request(`${API_BASE}/HomeItem/GetHomeItems?GetDataType=0`);
-                const items = homeRes.data || homeRes;
-                product = items.find(i => (i.title && i.title.includes(userConfig.targetCar)) || (i.titleDetails && i.titleDetails.includes(userConfig.targetCar)));
-                return product;
-            }, 1000);
+    // -------------------------------------------------
+    // HTTP client (Corrected for CORS)
+    // -------------------------------------------------
+    class HttpClient {
+        constructor(monitor) {
+            this.monitor = monitor;
+            this.cookies = Store.getCookies();
+        }
+        
+        async request({ endpoint, url, method = 'GET', data = null, auth = true, headers = {}, timeout = 15000 }) {
+            const target = appendRnd(url || `${API.BASE}${endpoint || ''}`);
+            const visitorId = Store.getVisitorId();
+            
+            const finalHeaders = { ...BASE_HEADERS, VisitorId: visitorId, ...headers };
+            
+            if (auth) {
+                const token = Store.getToken();
+                if (token) {
+                    try {
+                        const parsed = JSON.parse(token);
+                        finalHeaders['Authorization'] = `Bearer ${parsed.token || parsed}`;
+                    } catch {
+                        finalHeaders['Authorization'] = `Bearer ${token}`;
+                    }
+                }
+            }
+            if (method !== 'GET') finalHeaders['Content-Type'] = 'application/json';
 
-            log(`✅ یافت شد: ${product.title}`);
+            const started = performance.now();
+            const body = data ? JSON.stringify(data) : undefined;
 
-            let activeCirc = null;
-            await retryUntilSuccess('جستجوی بخشنامه', async () => {
-                const circRes = await request(`${API_BASE}/circulation/getCirculationData`, 'POST', {
-                    CarModelId: String(product.productGroup || product.id), getDataType: 0
+            try {
+                // CORS FIX: credentials 'include' removed to avoid wildcard origin conflict
+                const response = await fetch(target, {
+                    method: method,
+                    headers: finalHeaders,
+                    body: body
                 });
-                const circs = circRes.data || circRes;
-                const activeCircs = circs.filter(c => (c.isOnSale === "1" || c.isOnSale === true) && c.circulationColors?.length > 0);
-                if (activeCircs.length === 0) return null;
 
-                const targetP = parseInt(userConfig.targetPrice);
-                const keywords = userConfig.planKeywords ? userConfig.planKeywords.split(/[,،\s]+/).filter(k => k.trim().length > 0).map(normalizePersian) : [];
+                const duration = Math.max(1, Math.round(performance.now() - started));
+                const text = await response.text();
+                const payload = parseJSON(text, text);
 
-                if (targetP || keywords.length > 0) {
-                    activeCirc = activeCircs.find(c => {
-                        const titleNorm = normalizePersian(c.title + " " + (c.titleDetails || ""));
-                        let priceMatch = targetP > 0 ? (parseInt(c.basePrice) === targetP) : true;
-                        let keywordMatch = keywords.length > 0 ? keywords.every(k => titleNorm.includes(k)) : true;
-                        return priceMatch && keywordMatch;
-                    });
+                this.monitor.record({ method, url: target, status: response.status, duration, requestBody: body, responseBody: text });
+
+                if (response.status === 401) {
+                    throw new Error('نشست منقضی شد');
                 }
-                if (!activeCirc) activeCirc = activeCircs[0];
-                return activeCirc;
-            }, 1000);
 
-            log(`✅ بخشنامه: ${activeCirc.title}`);
-
-            let orderId = null;
-            while (isRunning && !orderId) {
-                try {
-                    const cap1 = await getCaptcha();
-                    const cap1Val = await askCaptcha(cap1.url);
-                    if (!isRunning) return;
-
-                    log('🚀 ارسال سفارش...');
-                    const opts = (activeCirc.options || []).map(o => String(o.id));
-                    let selectedColor = null;
-                    const colors = activeCirc.circulationColors;
-                    const prefs = userConfig.colorPriorities.split(/[,،]/).map(s => normalizePersian(s));
-                    for (let pref of prefs) {
-                        if(!pref) continue;
-                        const found = colors.find(c => normalizePersian(c.plainColor).includes(pref));
-                        if (found) { selectedColor = found; break; }
-                    }
-                    if (!selectedColor) selectedColor = colors[0];
-
-                    const regPayload = {
-                        branchId: 0,
-                        cirId: String(activeCirc.id),
-                        crcl_Row: String(activeCirc.crcl_row || activeCirc.rowId),
-                        circOpIds: opts,
-                        color_code: String(selectedColor.colorCode),
-                        count: 1,
-                        carVINNumber: "", carChassisNumber: "", carEngineNumber: "", carType: "", carName: "", capacity: "",
-                        captchaResponse: "",
-                        captchaToken: String(cap1.tid),
-                        captchaResult: String(cap1Val)
-                    };
-
-                    const regRes = await request(`${API_BASE}/order/register`, 'POST', regPayload);
-                    const orderData = regRes.data || regRes;
-
-                    if (orderData.id && orderData.id !== "0") {
-                        orderId = orderData.id;
-                        log(`✅ سفارش ثبت شد: ${orderId}`);
-
-                        // مرحله بانک و نمایندگی
-                        const banks = orderData.banks || [];
-                        let bank = banks[Math.floor(Math.random() * banks.length)] || { bankName: userConfig.bankName };
-
-                        // جستجوی نمایندگی
-                        await request(`${API_BASE}/branch/getCirculationBranchProvinceCity`, 'POST', {
-                             provinceId: String(userConfig.provinceId), circulationId: String(selectedColor.circulationId)
-                        });
-                        const citiesRes = await request(`${API_BASE}/branch/getCirculationBranchProvinceCity`, 'POST', {
-                            provinceId: String(userConfig.provinceId), circulationId: String(selectedColor.circulationId)
-                        });
-                        const cities = citiesRes.data || citiesRes;
-                        const targetCity = normalizePersian(userConfig.cityName);
-                        let selectedCity = cities.find(c => normalizePersian(c.title).includes(targetCity)) || cities[0];
-
-                        const branchRes = await request(`${API_BASE}/branch/getCirculationBranchCity`, 'POST', {
-                            cityCode: String(selectedCity.code || selectedCity.id), circulationId: String(selectedColor.circulationId)
-                        });
-                        const branches = branchRes.data || branchRes;
-                        if(!branches || !branches.length) throw new Error('نمایندگی پر شد');
-
-                        const cap2 = await getCaptcha();
-                        const cap2Val = await askCaptcha(cap2.url);
-
-                        const fillRes = await request(`${API_BASE}/fillConfirm/post`, 'POST', {
-                            onlineshoppingId: String(orderId),
-                            bankName: bank.bankName,
-                            branchId: String(branches[0].id),
-                            ticket: 'no-ticket',
-                            captchaResponse: "",
-                            captchaToken: String(cap2.tid),
-                            captchaResult: String(cap2Val)
-                        });
-
-                        const fillData = fillRes.data || fillRes;
-                        if(fillData.queueId) {
-                            log(`✅ در صف: ${fillData.queueId}`);
-                            await checkResultLoop(fillData.queueId, orderId);
-                            return;
-                        }
-                    } else {
-                        log(`⚠️ ${orderData.errors?.[0]?.errorDescription || 'خطا در ثبت'}`);
-                    }
-                } catch (e) {
-                    log(`⚠️ ${e}`);
-                    await sleep(1000);
+                if (response.ok) {
+                    return payload;
+                } else {
+                    const err = payload?.errors?.[0]?.errorDescription || payload?.message || `HTTP ${response.status}`;
+                    throw new Error(err);
                 }
+            } catch (err) {
+                const duration = Math.max(1, Math.round(performance.now() - started));
+                this.monitor.record({ method, url: target, status: 0, duration, requestBody: body, responseBody: err.message });
+                throw err;
+            }
+        }
+    }
+
+    // -------------------------------------------------
+    // Captcha utilities (Modified for FETCH)
+    // -------------------------------------------------
+    const fetchCaptchaImage = async () => {
+        const visitorId = Store.getVisitorId();
+        const url = `${API.CAPTCHA}/Captcha/GetCaptchaImage2?visitorId=${visitorId}&t=${Math.random()}`;
+        
+        try {
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: { ...BASE_HEADERS, Accept: '*/*' }
+            });
+
+            if (response.ok) {
+                const token = response.headers.get('token-id');
+                const blob = await response.blob();
+                const objectUrl = URL.createObjectURL(blob);
+                return { url: objectUrl, token };
+            } else {
+                throw new Error('Captcha fetch failed');
             }
         } catch (e) {
-            log(`❌ ${e}`);
-            isRunning = false;
+            console.error(e);
+            throw new Error('Captcha network error');
+        }
+    };
+
+    const solveCaptchaImage = async (objectUrl) => {
+        try {
+            const response = await fetch(objectUrl);
+            const blob = await response.blob();
+            const formData = new FormData();
+            formData.append('file', blob, 'captcha.jpg');
+            
+            const solveRes = await fetch(API.SOLVER, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (solveRes.ok) {
+                const json = await solveRes.json();
+                return json.text || json.result || null;
+            }
+            return null;
+        } catch (e) {
+            console.warn('Solver failed', e);
+            return null;
+        } finally {
+            setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+        }
+    };
+
+    class CaptchaSupervisor {
+        constructor(soundBus) {
+            this.queue = [];
+            this.maxSize = 6;
+            this.expire = 110000;
+            this.interval = 3000;
+            this.active = false;
+            this.soundBus = soundBus;
+            this.onUpdate = () => {};
+        }
+        setUpdateHandler(handler) {
+            this.onUpdate = handler || (() => {});
+            this.onUpdate(this.snapshot());
+        }
+        snapshot() { return { size: this.queue.length, active: this.active }; }
+        purge() {
+            const now = Date.now();
+            const before = this.queue.length;
+            this.queue = this.queue.filter((item) => (now - item.timestamp) < this.expire);
+            if (before !== this.queue.length) this.onUpdate(this.snapshot());
+        }
+        async start() {
+            if (this.active) return;
+            this.active = true;
+            this.loop();
+            this.onUpdate(this.snapshot());
+        }
+        stop() {
+            this.active = false;
+            this.onUpdate(this.snapshot());
+        }
+        async loop() {
+            while (this.active) {
+                try {
+                    this.purge();
+                    if (this.queue.length < this.maxSize) {
+                        const cap = await fetchCaptchaImage();
+                        const text = await solveCaptchaImage(cap.url);
+                        if (text && text.length >= 4) {
+                            this.queue.push({ token: cap.token, value: text, timestamp: Date.now() });
+                            this.onUpdate(this.snapshot());
+                            if (this.queue.length === this.maxSize) this.soundBus.play('queueFull');
+                        }
+                    }
+                } catch (err) {
+                    console.warn('Captcha worker error', err);
+                }
+                await sleep(this.interval);
+            }
+        }
+        async acquire() {
+            this.purge();
+            if (this.queue.length) {
+                const item = this.queue.shift();
+                this.onUpdate(this.snapshot());
+                return item;
+            }
+            const cap = await fetchCaptchaImage();
+            const text = await solveCaptchaImage(cap.url);
+            return { token: cap.token, value: text };
         }
     }
 
-    async function checkResultLoop(queueId, orderId) {
-        for(let i=0; i<60 && isRunning; i++) {
-             const check = await request(`${API_BASE}/bank/checkResult`, 'POST', { queueId: String(queueId), orderId: String(orderId) });
-             const d = check.data || check;
-             if(d.nextPageUrl) {
-                 log('🚀 انتقال به بانک...');
-                 window.location.href = d.nextPageUrl;
-                 return;
-             }
-             log(`⏳ در صف... ${i}`);
-             await sleep(1000);
+    // -------------------------------------------------
+    // UI manager
+    // -------------------------------------------------
+    class UIManager {
+        constructor({ provinces, defaults, monitor, soundBus, actions }) {
+            this.actions = actions;
+            this.defaults = defaults;
+            this.provinces = provinces;
+            this.monitor = monitor;
+            this.soundBus = soundBus;
+            this.logger = new UILogger();
+            this.currentUser = null;
+            this.injectStyles();
+            this.buildChrome();
+        }
+        injectStyles() {
+            if (document.getElementById('bm-style')) return;
+            const style = document.createElement('style');
+            style.id = 'bm-style';
+            style.innerText = `
+                .bm-container { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); width: 95%; max-width: 420px; max-height: 90vh; overflow-y: auto; background: #111; color: #e0e0e0; border: 1px solid #222; border-radius: 14px; z-index: 99998; font-family: 'Tahoma', sans-serif; direction: rtl; display:none; box-shadow: 0 12px 40px rgba(0,0,0,0.75); }
+                .bm-header { padding: 16px; border-bottom: 1px solid #222; display: flex; justify-content: space-between; align-items: center; font-weight: bold; background:#181818; position: sticky; top:0; }
+                .bm-close-btn { cursor: pointer; color: #ff5252; font-size: 22px; }
+                .bm-content { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+                .bm-input, .bm-select { background:#1e1e1e; border: 1px solid #333; color:#f5f5f5; padding: 11px; border-radius: 8px; width: 100%; box-sizing: border-box; text-align:center; font-size: 15px; }
+                .bm-input:focus { border-color:#00e676; }
+                .bm-btn { background: linear-gradient(135deg,#00c853,#64dd17); color:#000; border:none; padding: 13px; border-radius:9px; cursor:pointer; font-weight:bold; font-size:15px; }
+                .bm-btn[disabled] { opacity: 0.6; cursor:not-allowed; }
+                .bm-log { background:#000; color:#00e676; padding:10px; border-radius:8px; font-family:monospace; font-size:11px; height:130px; overflow-y:auto; border:1px solid #222; }
+                .bm-row { display:flex; gap:8px; flex-wrap:wrap; }
+                .bm-row > div { flex:1; min-width:45%; }
+                #bm-controls { position: fixed; bottom:80px; right:20px; z-index:99999; display:flex; flex-direction:column-reverse; gap:12px; }
+                .bm-float-btn { width:56px; height:56px; border-radius:50%; border:2px solid #fff; display:flex; align-items:center; justify-content:center; font-size:22px; cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,0.4); transition: transform 0.2s; }
+                .bm-float-btn:active { transform:scale(0.9); }
+                .bm-badge-container { background:#151515; border:1px dashed #333; border-radius:10px; padding:12px; display:flex; justify-content:space-between; align-items:center; }
+                .bm-badge-info { font-size:12px; color:#bbb; }
+                .bm-badge-count { font-size:22px; font-weight:bold; }
+                .bm-net-panel { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); width: 95%; height: 40vh; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; z-index: 99997; display: none; flex-direction: column; box-shadow: 0 -5px 20px rgba(0,0,0,0.8); font-family: monospace; font-size: 11px; color: #c9d1d9; text-align: left; direction: ltr; }
+                .bm-net-header { padding: 8px 10px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
+                .bm-net-body { flex: 1; overflow-y: auto; padding: 5px; }
+                .bm-net-row { display: flex; border-bottom: 1px solid #21262d; padding: 8px 0; cursor: pointer; }
+                .bm-net-url { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; }
+                .status-200 { color:#3fb950; }
+                .status-400 { color:#f85149; }
+                .method-GET { color:#58a6ff; font-weight:bold; }
+                .method-POST { color:#d29922; font-weight:bold; }
+                .bm-switch { display:flex; align-items:center; justify-content:space-between; background:#151515; border:1px solid #222; border-radius:8px; padding:10px 14px; font-size:12px; }
+            `;
+            document.head.appendChild(style);
+        }
+        buildChrome() {
+            if (!document.getElementById('bm-controls')) {
+                const controls = document.createElement('div');
+                controls.id = 'bm-controls';
+                controls.innerHTML = `
+                    <div class="bm-float-btn" id="bm-floater-main" style="background:linear-gradient(135deg,#00c853,#64dd17)">🤖</div>
+                    <div class="bm-float-btn" id="bm-floater-net" style="background:linear-gradient(135deg,#2979ff,#29b6f6)">🌐</div>
+                `;
+                document.body.appendChild(controls);
+                controls.querySelector('#bm-floater-main').addEventListener('click', () => this.showContainer());
+                controls.querySelector('#bm-floater-net').addEventListener('click', () => this.monitor.toggle());
+            }
+            this.monitor.ensurePanel();
+            this.container = document.querySelector('.bm-container');
+            if (!this.container) {
+                this.container = document.createElement('div');
+                this.container.className = 'bm-container';
+                document.body.appendChild(this.container);
+            }
+        }
+        showContainer() { if (this.container) this.container.style.display = 'block'; }
+        hideContainer() { if (this.container) this.container.style.display = 'none'; }
+        renderLogin() {
+            this.currentUser = null;
+            this.container.style.display = 'block';
+            this.container.innerHTML = `
+                <div class="bm-header">
+                    <span>🔐 ورود | ${SCRIPT.NAME}</span>
+                    <span class="bm-close-btn" id="bm-close">✖</span>
+                </div>
+                <div class="bm-content">
+                    <input id="bm-user" class="bm-input" type="tel" placeholder="کد ملی">
+                    <input id="bm-pass" class="bm-input" type="password" placeholder="رمز عبور">
+                    <div id="bm-cap-box" style="text-align:center;cursor:pointer;min-height:70px;border:1px dashed #444;border-radius:8px;display:flex;align-items:center;justify-content:center">کپچا</div>
+                    <input id="bm-cap-input" class="bm-input" type="tel" placeholder="کد امنیتی">
+                    <button id="bm-login-btn" class="bm-btn">ورود</button>
+                    <div id="bm-log-box" class="bm-log">آماده...</div>
+                </div>
+            `;
+            document.getElementById('bm-close').addEventListener('click', () => { this.hideContainer(); document.getElementById('bm-floater-main').style.display = 'flex'; });
+            const capBox = document.getElementById('bm-cap-box');
+            this.logger.attach('bm-log-box');
+            let captchaToken = null;
+            const refreshCaptcha = async () => {
+                capBox.innerHTML = '...';
+                try {
+                    const cap = await fetchCaptchaImage();
+                    captchaToken = cap.token;
+                    const img = document.createElement('img');
+                    img.src = cap.url;
+                    img.style.height = '70px';
+                    img.style.borderRadius = '6px';
+                    capBox.innerHTML = '';
+                    capBox.appendChild(img);
+                    const solved = await solveCaptchaImage(cap.url);
+                    if (solved) document.getElementById('bm-cap-input').value = solved;
+                } catch {
+                    capBox.innerHTML = '<span style="color:#ff5252">خطا</span>';
+                }
+            };
+            capBox.addEventListener('click', refreshCaptcha);
+            refreshCaptcha();
+            document.getElementById('bm-login-btn').addEventListener('click', () => {
+                const nationalCode = document.getElementById('bm-user').value.trim();
+                const password = document.getElementById('bm-pass').value.trim();
+                const captcha = document.getElementById('bm-cap-input').value.trim();
+                if (!nationalCode || !password || !captcha) {
+                    this.logger.push('لطفا تمام فیلدها را کامل کنید', 'warn');
+                    return;
+                }
+                this.actions.onLogin({ nationalCode, password, captchaResult: captcha, captchaToken });
+            });
+        }
+        renderDashboard(user, config) {
+            this.currentUser = user;
+            this.container.style.display = 'block';
+            this.container.innerHTML = `
+                <div class="bm-header">
+                    <span style="font-size:13px">کاربر: <span style="color:#00e676">${user?.firstName || ''}</span></span>
+                    <span class="bm-close-btn" id="bm-close">✖</span>
+                </div>
+                <div class="bm-content">
+                    <div class="bm-badge-container">
+                        <div class="bm-badge-info">موتور کپچا<br><span id="queue-status" style="color:#777">غیرفعال</span></div>
+                        <div style="text-align:center">
+                            <div id="queue-count" class="bm-badge-count">0</div>
+                            <small style="color:#888">صف آماده</small>
+                        </div>
+                    </div>
+                    <div class="bm-row">
+                        <div><input id="cfg-car" class="bm-input" value="${config.targetCar}" placeholder="خودرو"></div>
+                        <div><input id="cfg-price" class="bm-input" value="${config.targetPrice}" placeholder="قیمت"></div>
+                    </div>
+                    <div class="bm-row">
+                        <div><input id="cfg-color" class="bm-input" value="${config.colorPriorities}" placeholder="رنگ‌ها"></div>
+                        <div><select id="cfg-province" class="bm-select">${this.renderProvinceOptions(config.provinceId)}</select></div>
+                    </div>
+                    <input id="cfg-city" class="bm-input" value="${config.cityName}" placeholder="شهر">
+                    <div class="bm-switch">
+                        <span>صدای اعلان</span>
+                        <label>
+                            <input type="checkbox" id="bm-sound-toggle" ${this.soundBus.enabled ? 'checked' : ''}>
+                        </label>
+                    </div>
+                    <button id="bm-toggle-worker" class="bm-btn" style="background:linear-gradient(135deg,#2979ff,#29b6f6)">⚡ موتور کپچا</button>
+                    <button id="bm-start" class="bm-btn">🚀 شروع خرید</button>
+                    <button id="bm-stop" class="bm-btn" style="background:#e65100;display:none">⛔ توقف</button>
+                    <button id="bm-logout" class="bm-btn" style="background:#d32f2f;font-size:12px;padding:10px;margin-top:10px">خروج</button>
+                    <div id="bm-log-box" class="bm-log">آماده...</div>
+                </div>
+            `;
+            document.getElementById('bm-close').addEventListener('click', () => { this.hideContainer(); document.getElementById('bm-floater-main').style.display = 'flex'; });
+            this.logger.attach('bm-log-box');
+            document.getElementById('bm-toggle-worker').addEventListener('click', this.actions.onToggleCaptcha);
+            document.getElementById('bm-start').addEventListener('click', () => this.actions.onStart(this.collectConfig()));
+            document.getElementById('bm-stop').addEventListener('click', () => this.actions.onStop());
+            document.getElementById('bm-logout').addEventListener('click', this.actions.onLogout);
+            document.getElementById('bm-sound-toggle').addEventListener('change', (e) => this.actions.onSoundToggle(e.target.checked));
+        }
+        renderProvinceOptions(selectedId) {
+            return this.provinces.map((p) => `<option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>${p.title}</option>`).join('');
+        }
+        collectConfig() {
+            return {
+                targetCar: document.getElementById('cfg-car').value.trim() || DEFAULT_CONFIG.targetCar,
+                targetPrice: document.getElementById('cfg-price').value.trim().replace(/[,،]/g, ''),
+                provinceId: document.getElementById('cfg-province').value,
+                cityName: document.getElementById('cfg-city').value.trim() || DEFAULT_CONFIG.cityName,
+                bankName: DEFAULT_CONFIG.bankName,
+                colorPriorities: document.getElementById('cfg-color').value.trim() || DEFAULT_CONFIG.colorPriorities
+            };
+        }
+        updateQueue({ size, active }) {
+            const count = document.getElementById('queue-count');
+            const status = document.getElementById('queue-status');
+            if (count) count.innerText = size;
+            if (count) count.style.color = size >= 4 ? '#00e676' : '#ff5252';
+            if (status) status.innerText = active ? 'فعال' : 'غیرفعال';
+            if (status) status.style.color = active ? '#00e676' : '#777';
+        }
+        setRunState(running) {
+            const startBtn = document.getElementById('bm-start');
+            const stopBtn = document.getElementById('bm-stop');
+            if (!startBtn || !stopBtn) return;
+            startBtn.style.display = running ? 'none' : 'block';
+            stopBtn.style.display = running ? 'block' : 'none';
+        }
+        log(message, level = 'info') { this.logger.push(message, level); }
+    }
+
+    // -------------------------------------------------
+    // Buying engine
+    // -------------------------------------------------
+    class BuyingEngine {
+        constructor({ http, captcha, ui, sound }) {
+            this.http = http;
+            this.captcha = captcha;
+            this.ui = ui;
+            this.sound = sound;
+            this.running = false;
+            this.currentConfig = DEFAULT_CONFIG;
+        }
+        isRunning() { return this.running; }
+        async start(config) {
+            if (this.running) return;
+            this.running = true;
+            this.currentConfig = config;
+            Store.saveConfig(config);
+            this.ui.setRunState(true);
+            this.ui.log('✅ شروع فرآیند خرید...');
+            try {
+                await this.run();
+            } catch (err) {
+                this.ui.log(`❌ خطا: ${err.message || err}`, 'error');
+            } finally {
+                this.running = false;
+                this.ui.setRunState(false);
+            }
+        }
+        stop(reason = 'درخواست کاربر') {
+            if (!this.running) return;
+            this.running = false;
+            this.ui.log(`⛔ توقف: ${reason}`, 'warn');
+            this.ui.setRunState(false);
+        }
+        async run() {
+            const cfg = this.currentConfig;
+            const product = await this.findProduct(cfg.targetCar);
+            if (!this.running || !product) return;
+            this.ui.log(`🏎️ محصول یافت شد: ${product.title || product.titleDetails}`);
+            const circulation = await this.findActiveCirculation(product);
+            if (!this.running || !circulation) return;
+            this.ui.log('📄 بخشنامه فعال یافت شد');
+            const color = this.pickColor(circulation.circulationColors || [], cfg.colorPriorities);
+            if (!color) {
+                this.ui.log('رنگ مطابق سلیقه وجود ندارد؛ اولین رنگ انتخاب می‌شود', 'warn');
+            } else {
+                this.ui.log(`🎨 رنگ انتخابی: ${color.plainColor}`);
+            }
+            await this.registerLoop({ circulation, color: color || (circulation.circulationColors || [])[0], cfg });
+        }
+        async findProduct(targetCar) {
+            this.ui.log('🔍 جستجوی خودرو...');
+            while (this.running) {
+                try {
+                    const res = await this.http.request({ endpoint: API.ENDPOINTS.HOME });
+                    const items = res.data || res;
+                    const found = (items || []).find((item) => {
+                        const text = (item.title || '') + (item.titleDetails || '');
+                        return normalizePersian(text).includes(normalizePersian(targetCar));
+                    });
+                    if (found) return found;
+                } catch (err) {
+                    this.ui.log(`Home error: ${err.message || err}`, 'warn');
+                }
+                await sleep(100);
+            }
+            return null;
+        }
+        async findActiveCirculation(product) {
+            this.ui.log('📑 جستجوی بخشنامه...');
+            const modelId = String(product.productGroup || product.id);
+            while (this.running) {
+                try {
+                    const res = await this.http.request({ endpoint: API.ENDPOINTS.CIRCULATION, method: 'POST', data: { CarModelId: modelId, getDataType: 0 } });
+                    const entries = res.data || res;
+                    const active = (entries || []).find((entry) => (entry.isOnSale === '1' || entry.isOnSale === true) && (entry.circulationColors || []).length > 0);
+                    if (active) return active;
+                } catch (err) {
+                    this.ui.log(`Circulation error: ${err.message || err}`, 'warn');
+                }
+                await sleep(80);
+            }
+            return null;
+        }
+        pickColor(colors, preferenceString) {
+            if (!colors || !colors.length) return null;
+            const prefs = (preferenceString || '').split(/[,،]/).map(normalizePersian).filter(Boolean);
+            for (const pref of prefs) {
+                const match = colors.find((c) => normalizePersian(c.plainColor).includes(pref));
+                if (match) return match;
+            }
+            return colors[0];
+        }
+        async resolveBranch({ provinceId, cityName, color }) {
+            try {
+                const citiesRes = await this.http.request({
+                    endpoint: API.ENDPOINTS.BRANCH_PROVINCE,
+                    method: 'POST',
+                    data: { provinceId: String(provinceId), circulationId: String(color.circulationId) }
+                });
+                const cities = citiesRes.data || citiesRes || [];
+                const targetCity = normalizePersian(cityName);
+                const selectedCity = cities.find((c) => normalizePersian(c.title).includes(targetCity)) || cities[0];
+                if (!selectedCity) return 0;
+                const branchRes = await this.http.request({
+                    endpoint: API.ENDPOINTS.BRANCH_CITY,
+                    method: 'POST',
+                    data: { cityCode: String(selectedCity.code || selectedCity.id), circulationId: String(color.circulationId) }
+                });
+                const branches = branchRes.data || branchRes || [];
+                return branches.length ? branches[0].id : 0;
+            } catch {
+                return 0;
+            }
+        }
+        async registerLoop({ circulation, color, cfg }) {
+            while (this.running) {
+                try {
+                    const captcha = await this.captcha.acquire();
+                    if (!captcha?.value) continue;
+                    const [registerRes, branchId] = await Promise.all([
+                        this.http.request({
+                            endpoint: API.ENDPOINTS.REGISTER,
+                            method: 'POST',
+                            data: {
+                                branchId: 0,
+                                cirId: String(circulation.id),
+                                crcl_Row: String(circulation.crcl_row || circulation.rowId),
+                                circOpIds: (circulation.options || []).map((o) => String(o.id)),
+                                color_code: String(color.colorCode),
+                                count: 1,
+                                captchaResponse: '',
+                                captchaToken: String(captcha.token),
+                                captchaResult: String(captcha.value)
+                            }
+                        }),
+                        this.resolveBranch({ provinceId: cfg.provinceId, cityName: cfg.cityName, color })
+                    ]);
+                    const orderData = registerRes.data || registerRes;
+                    if (orderData.id && orderData.id !== '0') {
+                        this.ui.log(`🎉 سفارش ثبت شد: ${orderData.id}`);
+                        this.sound.play('success');
+                        await this.fillAndPoll(orderData, branchId || 0);
+                        this.running = false;
+                        return;
+                    }
+                    const err = orderData.errors?.[0]?.errorDescription || orderData.message || 'نامشخص';
+                    this.ui.log(`⚠️ عدم ثبت: ${err}`);
+                    if (!err.includes('کد امنیتی')) await sleep(300);
+                } catch (err) {
+                    this.ui.log(`⏳ تلاش مجدد: ${err.message || err}`, 'warn');
+                    await sleep(250);
+                }
+            }
+        }
+        async fillAndPoll(orderData, branchId) {
+            const captcha = await this.captcha.acquire();
+            if (!captcha?.value) throw new Error('Captcha missing for fill confirm');
+            const bankName = (orderData.banks && orderData.banks.length) ? orderData.banks[0].bankName : this.currentConfig.bankName;
+            const payload = {
+                onlineshoppingId: String(orderData.id),
+                bankName,
+                branchId: String(branchId || 0),
+                ticket: 'no-ticket',
+                captchaResponse: '',
+                captchaToken: String(captcha.token),
+                captchaResult: String(captcha.value)
+            };
+            const fillRes = await this.http.request({ endpoint: API.ENDPOINTS.FILL_CONFIRM, method: 'POST', data: payload });
+            const fillData = fillRes.data || fillRes;
+            if (!fillData.queueId) {
+                this.ui.log('⚠️ صف بانک در دسترس نیست');
+                return;
+            }
+            this.ui.log('🏁 در انتظار درگاه بانکی...');
+            for (let i = 0; i < 60 && this.running; i++) {
+                const check = await this.http.request({ endpoint: API.ENDPOINTS.BANK_CHECK, method: 'POST', data: { queueId: String(fillData.queueId), orderId: String(orderData.id) } });
+                const data = check.data || check;
+                if (data.nextPageUrl) {
+                    this.ui.log('🔗 باز کردن درگاه بانکی');
+                    const win = window.open(data.nextPageUrl, '_blank');
+                    if (!win) window.location.href = data.nextPageUrl;
+                    return;
+                }
+                await sleep(1000);
+            }
         }
     }
 
-    // شروع برنامه
-    const t = localStorage.getItem('bm_token');
-    const u = localStorage.getItem('bm_user');
-    if (t && u) { try { renderDashboard(JSON.parse(u)); } catch { renderLogin(); } } else { renderLogin(); }
+    // -------------------------------------------------
+    // Bootstrapping
+    // -------------------------------------------------
+    const monitor = new NetworkMonitor();
+    const http = new HttpClient(monitor);
+    const sound = new SoundBus();
+    const captcha = new CaptchaSupervisor(sound);
+    const ui = new UIManager({
+        provinces: PROVINCES,
+        defaults: DEFAULT_CONFIG,
+        monitor,
+        soundBus: sound,
+        actions: {}
+    });
+    const engine = new BuyingEngine({ http, captcha, ui, sound });
 
+    const actions = {
+        async onLogin({ nationalCode, password, captchaResult, captchaToken }) {
+            try {
+                ui.log('در حال ورود...');
+                const res = await http.request({
+                    endpoint: API.ENDPOINTS.LOGIN,
+                    method: 'POST',
+                    data: { nationalCode, password, captchaResult, captchaToken },
+                    auth: false
+                });
+                const token = res.token || res.data?.token;
+                const user = res.customer || res.data?.customer;
+                if (!token || !user) throw new Error('پاسخ نامعتبر');
+                Store.setToken(JSON.stringify(token));
+                Store.setUser(user);
+                ui.log('ورود موفق ✅');
+                ui.renderDashboard(user, Store.getConfig());
+            } catch (err) {
+                ui.log(`ورود ناموفق: ${err.message || err}`, 'error');
+            }
+        },
+        onToggleCaptcha: () => {
+            if (captcha.active) { captcha.stop(); ui.log('موتور کپچا متوقف شد'); }
+            else { captcha.start(); ui.log('موتور کپچا فعال شد'); }
+        },
+        onStart: (config) => {
+            engine.start(config);
+        },
+        onStop: () => engine.stop(),
+        onLogout: () => {
+            Store.clearSession();
+            window.location.reload();
+        },
+        onSoundToggle: (flag) => {
+            sound.toggle(flag);
+            ui.log(flag ? 'صدا فعال شد' : 'صدا غیرفعال شد');
+        }
+    };
+
+    ui.actions = actions;
+    captcha.setUpdateHandler((snapshot) => ui.updateQueue(snapshot));
+
+    const boot = () => {
+        const token = Store.getToken();
+        const user = Store.getUser();
+        if (token && user) ui.renderDashboard(user, Store.getConfig());
+        else ui.renderLogin();
+    };
+
+    boot();
 })();
