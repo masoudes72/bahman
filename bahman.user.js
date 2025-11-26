@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Bahman Auto Buyer - Mobile Fix Edition
+// @name         Bahman Auto Buyer - Mobile Final Fix
 // @namespace    https://bahman.iranecar.com/
-// @version      2025.11.26.MobileFix
-// @description  Bahman Motors auto buyer refactored for Mobile (CORS & Token Fix).
+// @version      2025.11.27.MobileUltimate
+// @description  Bahman Motors auto buyer - Deep Token Search & Mobile Fix
 // @author       You
 // @match        https://bahman.iranecar.com/*
 // @grant        GM_setValue
@@ -17,8 +17,8 @@
     // Static configuration
     // -------------------------------------------------
     const SCRIPT = {
-        NAME: 'Bahman Auto Buyer (Mobile)',
-        VERSION: '2025.11.26.MobileFix',
+        NAME: 'Bahman Auto Buyer (Mobile Ultimate)',
+        VERSION: '2025.11.27.MobileUltimate',
         STORAGE_PREFIX: 'bm'
     };
 
@@ -82,6 +82,25 @@
         try { return JSON.parse(payload); } catch { return fallback; }
     };
 
+    // Helper to deeply extract token string
+    const extractTokenString = (input) => {
+        if (!input) return null;
+        if (typeof input === 'string') return input;
+
+        // Search inside object
+        if (typeof input === 'object') {
+            return input.token || input.accessToken || input.access_token || input.Token || null;
+        }
+        return null;
+    };
+
+    // Helper to find user name
+    const extractUserName = (userObj) => {
+        if (!userObj) return 'ناشناس';
+        return userObj.firstName || userObj.FirstName || userObj.name || userObj.Name ||
+               (userObj.customer && userObj.customer.firstName) || 'کاربر';
+    };
+
     // -------------------------------------------------
     // Storage helpers
     // -------------------------------------------------
@@ -95,7 +114,14 @@
             return id;
         },
         getToken() { return localStorage.getItem('bm_token'); },
-        setToken(token) { if (!token) localStorage.removeItem('bm_token'); else localStorage.setItem('bm_token', token); },
+        setToken(token) {
+            if (!token) localStorage.removeItem('bm_token');
+            else {
+                // Always try to store just the string
+                const clean = extractTokenString(token) || (typeof token === 'object' ? JSON.stringify(token) : token);
+                localStorage.setItem('bm_token', clean);
+            }
+        },
         getUser() { return parseJSON(localStorage.getItem('bm_user')); },
         setUser(user) { if (!user) localStorage.removeItem('bm_user'); else localStorage.setItem('bm_user', JSON.stringify(user)); },
         getCookies() { return localStorage.getItem('bm_cookies') || ''; },
@@ -180,7 +206,7 @@
             div.id = 'bm-net-panel';
             div.innerHTML = `
                 <div class="bm-net-header">
-                    <span>🌐 Network Log (Mobile Mode)</span>
+                    <span>🌐 Network Log (Mobile)</span>
                     <span class="bm-close-btn" data-close-net>✖</span>
                 </div>
                 <div class="bm-net-body" id="bm-net-list"></div>
@@ -215,7 +241,7 @@
     }
 
     // -------------------------------------------------
-    // HTTP client (Corrected for Mobile & Objects)
+    // HTTP client (Ultimate Token Fix)
     // -------------------------------------------------
     class HttpClient {
         constructor(monitor) {
@@ -231,23 +257,21 @@
 
             if (auth) {
                 const rawToken = Store.getToken();
-                if (rawToken) {
-                    let tokenStr = rawToken;
-                    try {
-                        const parsed = JSON.parse(rawToken);
-                        if (typeof parsed === 'object' && parsed !== null) {
-                            tokenStr = parsed.token || parsed.accessToken || parsed.access_token || rawToken;
-                        } else {
-                            tokenStr = parsed;
-                        }
-                    } catch {
-                        tokenStr = rawToken;
-                    }
+                // Ensure we only send a string, not an object
+                let tokenStr = extractTokenString(rawToken);
 
-                    if (typeof tokenStr === 'object') {
-                         tokenStr = JSON.stringify(tokenStr);
-                    }
+                // Fallback: try to parse if it looks like JSON
+                if (!tokenStr && rawToken && (rawToken.startsWith('{') || rawToken.startsWith('['))) {
+                     try {
+                         const parsed = JSON.parse(rawToken);
+                         tokenStr = extractTokenString(parsed);
+                     } catch {}
+                }
 
+                // Final fallback
+                if (!tokenStr) tokenStr = rawToken;
+
+                if (tokenStr) {
                     finalHeaders['Authorization'] = `Bearer ${tokenStr}`;
                 }
             }
@@ -527,7 +551,7 @@
             this.container.style.display = 'block';
             this.container.innerHTML = `
                 <div class="bm-header">
-                    <span style="font-size:13px">کاربر: <span style="color:#00e676">${user?.firstName || user?.FirstName || 'کاربر'}</span></span>
+                    <span style="font-size:13px">کاربر: <span style="color:#00e676">${extractUserName(user)}</span></span>
                     <span class="bm-close-btn" id="bm-close">✖</span>
                 </div>
                 <div class="bm-content">
@@ -814,15 +838,22 @@
                     data: { nationalCode, password, captchaResult, captchaToken },
                     auth: false
                 });
-                const token = res.token || res.data?.token;
-                const user = res.customer || res.data?.customer;
-                if (!token || !user) throw new Error('پاسخ نامعتبر');
 
-                Store.setToken(typeof token === 'object' ? JSON.stringify(token) : token);
+                // Debuging Mobile Response
+                ui.log('Keys: ' + Object.keys(res).join(', '));
+
+                const token = extractTokenString(res) || res.token || res.data?.token;
+                const user = res.customer || res.data?.customer || res.result?.customer;
+
+                if (!token || !user) {
+                     console.log('Login response structure:', res);
+                     throw new Error('پاسخ سرور نامعتبر است');
+                }
+
+                Store.setToken(token);
                 Store.setUser(user);
 
                 ui.log('ورود موفق ✅');
-                // Removed reload for mobile stability
                 ui.renderDashboard(user, Store.getConfig());
             } catch (err) {
                 ui.log(`ورود ناموفق: ${err.message || err}`, 'error');
