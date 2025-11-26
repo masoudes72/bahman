@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Bahman Auto Buyer - Mobile Compatible
+// @name         Bahman Auto Buyer - Mobile Fix Edition
 // @namespace    https://bahman.iranecar.com/
-// @version      2025.11.25.MobileFix
-// @description  Bahman Motors auto buyer optimized for Mobile (CORS & Headers Fixed).
+// @version      2025.11.26.MobileFix
+// @description  Bahman Motors auto buyer refactored for Mobile (CORS & Token Fix).
 // @author       You
 // @match        https://bahman.iranecar.com/*
 // @grant        GM_setValue
@@ -17,8 +17,8 @@
     // Static configuration
     // -------------------------------------------------
     const SCRIPT = {
-        NAME: 'Bahman Mobile',
-        VERSION: '2025.11.25.Mobile',
+        NAME: 'Bahman Auto Buyer (Mobile)',
+        VERSION: '2025.11.26.MobileFix',
         STORAGE_PREFIX: 'bm'
     };
 
@@ -66,7 +66,6 @@
         success: 'https://www.soundjay.com/misc/sounds/magic-chime-01.mp3'
     };
 
-    // FIX FOR MOBILE: Removed User-Agent. Mobile browsers handle this natively.
     const BASE_HEADERS = {
         'Accept': 'application/json',
         'Accept-Language': 'fa-IR,fa;q=0.9'
@@ -97,10 +96,7 @@
         },
         getToken() { return localStorage.getItem('bm_token'); },
         setToken(token) { if (!token) localStorage.removeItem('bm_token'); else localStorage.setItem('bm_token', token); },
-        getUser() {
-            const u = parseJSON(localStorage.getItem('bm_user'));
-            return u || { firstName: 'کاربر', lastName: 'موبایل' }; // Fallback for mobile
-        },
+        getUser() { return parseJSON(localStorage.getItem('bm_user')); },
         setUser(user) { if (!user) localStorage.removeItem('bm_user'); else localStorage.setItem('bm_user', JSON.stringify(user)); },
         getCookies() { return localStorage.getItem('bm_cookies') || ''; },
         setCookies(cookie) { if (cookie) localStorage.setItem('bm_cookies', cookie); },
@@ -165,7 +161,6 @@
         toggle(flag) { this.enabled = flag; Store.setSound(flag); }
         play(name) {
             if (!this.enabled) return;
-            // On mobile, audio often needs user interaction first, so catch errors silently
             const audio = this.registry[name];
             if (audio) audio.play().catch(() => {});
         }
@@ -185,7 +180,7 @@
             div.id = 'bm-net-panel';
             div.innerHTML = `
                 <div class="bm-net-header">
-                    <span>🌐 Net Log (Mobile)</span>
+                    <span>🌐 Network Log (Mobile Mode)</span>
                     <span class="bm-close-btn" data-close-net>✖</span>
                 </div>
                 <div class="bm-net-body" id="bm-net-list"></div>
@@ -220,7 +215,7 @@
     }
 
     // -------------------------------------------------
-    // HTTP client (Mobile Optimized)
+    // HTTP client (Corrected for Mobile & Objects)
     // -------------------------------------------------
     class HttpClient {
         constructor(monitor) {
@@ -232,27 +227,37 @@
             const target = appendRnd(url || `${API.BASE}${endpoint || ''}`);
             const visitorId = Store.getVisitorId();
 
-            // Clean headers for mobile
             const finalHeaders = { ...BASE_HEADERS, VisitorId: visitorId, ...headers };
 
             if (auth) {
-                const token = Store.getToken();
-                if (token) {
+                const rawToken = Store.getToken();
+                if (rawToken) {
+                    let tokenStr = rawToken;
                     try {
-                        const parsed = JSON.parse(token);
-                        finalHeaders['Authorization'] = `Bearer ${parsed.token || parsed}`;
+                        const parsed = JSON.parse(rawToken);
+                        if (typeof parsed === 'object' && parsed !== null) {
+                            tokenStr = parsed.token || parsed.accessToken || parsed.access_token || rawToken;
+                        } else {
+                            tokenStr = parsed;
+                        }
                     } catch {
-                        finalHeaders['Authorization'] = `Bearer ${token}`;
+                        tokenStr = rawToken;
                     }
+
+                    if (typeof tokenStr === 'object') {
+                         tokenStr = JSON.stringify(tokenStr);
+                    }
+
+                    finalHeaders['Authorization'] = `Bearer ${tokenStr}`;
                 }
             }
+
             if (method !== 'GET') finalHeaders['Content-Type'] = 'application/json';
 
             const started = performance.now();
             const body = data ? JSON.stringify(data) : undefined;
 
             try {
-                // IMPORTANT: No 'credentials: include' for mobile to avoid CORS wildcard issues
                 const response = await fetch(target, {
                     method: method,
                     headers: finalHeaders,
@@ -272,7 +277,7 @@
                 if (response.ok) {
                     return payload;
                 } else {
-                    const err = payload?.errors?.[0]?.errorDescription || payload?.message || `خطای سرور: ${response.status}`;
+                    const err = payload?.errors?.[0]?.errorDescription || payload?.message || `HTTP ${response.status}`;
                     throw new Error(err);
                 }
             } catch (err) {
@@ -295,7 +300,6 @@
                 method: 'GET',
                 headers: { ...BASE_HEADERS, Accept: '*/*' }
             });
-
             if (response.ok) {
                 const token = response.headers.get('token-id');
                 const blob = await response.blob();
@@ -309,19 +313,16 @@
             throw new Error('Captcha network error');
         }
     };
-
     const solveCaptchaImage = async (objectUrl) => {
         try {
             const response = await fetch(objectUrl);
             const blob = await response.blob();
             const formData = new FormData();
             formData.append('file', blob, 'captcha.jpg');
-
             const solveRes = await fetch(API.SOLVER, {
                 method: 'POST',
                 body: formData
             });
-
             if (solveRes.ok) {
                 const json = await solveRes.json();
                 return json.text || json.result || null;
@@ -340,7 +341,7 @@
             this.queue = [];
             this.maxSize = 6;
             this.expire = 110000;
-            this.interval = 4000; // Slower on mobile
+            this.interval = 3000;
             this.active = false;
             this.soundBus = soundBus;
             this.onUpdate = () => {};
@@ -417,29 +418,28 @@
             if (document.getElementById('bm-style')) return;
             const style = document.createElement('style');
             style.id = 'bm-style';
-            // Increased font sizes and touch targets for mobile
             style.innerText = `
-                .bm-container { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); width: 98%; max-width: 420px; max-height: 90vh; overflow-y: auto; background: #111; color: #e0e0e0; border: 1px solid #222; border-radius: 14px; z-index: 99998; font-family: 'Tahoma', sans-serif; direction: rtl; display:none; box-shadow: 0 12px 40px rgba(0,0,0,0.75); }
+                .bm-container { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); width: 95%; max-width: 420px; max-height: 90vh; overflow-y: auto; background: #111; color: #e0e0e0; border: 1px solid #222; border-radius: 14px; z-index: 99998; font-family: 'Tahoma', sans-serif; direction: rtl; display:none; box-shadow: 0 12px 40px rgba(0,0,0,0.75); }
                 .bm-header { padding: 16px; border-bottom: 1px solid #222; display: flex; justify-content: space-between; align-items: center; font-weight: bold; background:#181818; position: sticky; top:0; }
-                .bm-close-btn { cursor: pointer; color: #ff5252; font-size: 26px; padding: 0 10px; }
-                .bm-content { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
-                .bm-input, .bm-select { background:#1e1e1e; border: 1px solid #333; color:#f5f5f5; padding: 12px; border-radius: 8px; width: 100%; box-sizing: border-box; text-align:center; font-size: 16px; }
+                .bm-close-btn { cursor: pointer; color: #ff5252; font-size: 22px; }
+                .bm-content { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+                .bm-input, .bm-select { background:#1e1e1e; border: 1px solid #333; color:#f5f5f5; padding: 11px; border-radius: 8px; width: 100%; box-sizing: border-box; text-align:center; font-size: 15px; }
                 .bm-input:focus { border-color:#00e676; }
-                .bm-btn { background: linear-gradient(135deg,#00c853,#64dd17); color:#000; border:none; padding: 14px; border-radius:9px; cursor:pointer; font-weight:bold; font-size:16px; }
+                .bm-btn { background: linear-gradient(135deg,#00c853,#64dd17); color:#000; border:none; padding: 13px; border-radius:9px; cursor:pointer; font-weight:bold; font-size:15px; }
                 .bm-btn[disabled] { opacity: 0.6; cursor:not-allowed; }
-                .bm-log { background:#000; color:#00e676; padding:10px; border-radius:8px; font-family:monospace; font-size:11px; height:120px; overflow-y:auto; border:1px solid #222; }
+                .bm-log { background:#000; color:#00e676; padding:10px; border-radius:8px; font-family:monospace; font-size:11px; height:130px; overflow-y:auto; border:1px solid #222; }
                 .bm-row { display:flex; gap:8px; flex-wrap:wrap; }
                 .bm-row > div { flex:1; min-width:45%; }
-                #bm-controls { position: fixed; bottom:80px; right:20px; z-index:99999; display:flex; flex-direction:column-reverse; gap:15px; }
-                .bm-float-btn { width:60px; height:60px; border-radius:50%; border:2px solid #fff; display:flex; align-items:center; justify-content:center; font-size:24px; cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,0.4); transition: transform 0.2s; }
+                #bm-controls { position: fixed; bottom:80px; right:20px; z-index:99999; display:flex; flex-direction:column-reverse; gap:12px; }
+                .bm-float-btn { width:56px; height:56px; border-radius:50%; border:2px solid #fff; display:flex; align-items:center; justify-content:center; font-size:22px; cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,0.4); transition: transform 0.2s; }
                 .bm-float-btn:active { transform:scale(0.9); }
                 .bm-badge-container { background:#151515; border:1px dashed #333; border-radius:10px; padding:12px; display:flex; justify-content:space-between; align-items:center; }
                 .bm-badge-info { font-size:12px; color:#bbb; }
                 .bm-badge-count { font-size:22px; font-weight:bold; }
-                .bm-net-panel { position: fixed; bottom: 0; left: 0; width: 100%; height: 50vh; background: #0d1117; border-top: 2px solid #30363d; z-index: 99999; display: none; flex-direction: column; font-family: monospace; font-size: 11px; color: #c9d1d9; text-align: left; direction: ltr; }
-                .bm-net-header { padding: 12px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
+                .bm-net-panel { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); width: 95%; height: 40vh; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; z-index: 99997; display: none; flex-direction: column; box-shadow: 0 -5px 20px rgba(0,0,0,0.8); font-family: monospace; font-size: 11px; color: #c9d1d9; text-align: left; direction: ltr; }
+                .bm-net-header { padding: 8px 10px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
                 .bm-net-body { flex: 1; overflow-y: auto; padding: 5px; }
-                .bm-net-row { display: flex; border-bottom: 1px solid #21262d; padding: 10px 0; cursor: pointer; }
+                .bm-net-row { display: flex; border-bottom: 1px solid #21262d; padding: 8px 0; cursor: pointer; }
                 .bm-net-url { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; }
                 .status-200 { color:#3fb950; }
                 .status-400 { color:#f85149; }
@@ -476,7 +476,7 @@
             this.container.style.display = 'block';
             this.container.innerHTML = `
                 <div class="bm-header">
-                    <span>🔐 ورود (موبایل)</span>
+                    <span>🔐 ورود | ${SCRIPT.NAME}</span>
                     <span class="bm-close-btn" id="bm-close">✖</span>
                 </div>
                 <div class="bm-content">
@@ -506,7 +506,7 @@
                     const solved = await solveCaptchaImage(cap.url);
                     if (solved) document.getElementById('bm-cap-input').value = solved;
                 } catch {
-                    capBox.innerHTML = '<span style="color:#ff5252">خطا در دریافت کپچا</span>';
+                    capBox.innerHTML = '<span style="color:#ff5252">خطا</span>';
                 }
             };
             capBox.addEventListener('click', refreshCaptcha);
@@ -527,7 +527,7 @@
             this.container.style.display = 'block';
             this.container.innerHTML = `
                 <div class="bm-header">
-                    <span style="font-size:13px">کاربر: <span style="color:#00e676">${user?.firstName || 'ناشناس'}</span></span>
+                    <span style="font-size:13px">کاربر: <span style="color:#00e676">${user?.firstName || user?.FirstName || 'کاربر'}</span></span>
                     <span class="bm-close-btn" id="bm-close">✖</span>
                 </div>
                 <div class="bm-content">
@@ -639,10 +639,6 @@
             const product = await this.findProduct(cfg.targetCar);
             if (!this.running || !product) return;
             this.ui.log(`🏎️ محصول یافت شد: ${product.title || product.titleDetails}`);
-
-            // Increased delay before next step for mobile stability
-            await sleep(500);
-
             const circulation = await this.findActiveCirculation(product);
             if (!this.running || !circulation) return;
             this.ui.log('📄 بخشنامه فعال یافت شد');
@@ -666,9 +662,9 @@
                     });
                     if (found) return found;
                 } catch (err) {
-                    this.ui.log(`خطا در جستجو: ${err.message || 'شبکه'}`, 'warn');
+                    this.ui.log(`Home error: ${err.message || err}`, 'warn');
                 }
-                await sleep(1500); // Slower polling for mobile
+                await sleep(100);
             }
             return null;
         }
@@ -682,9 +678,9 @@
                     const active = (entries || []).find((entry) => (entry.isOnSale === '1' || entry.isOnSale === true) && (entry.circulationColors || []).length > 0);
                     if (active) return active;
                 } catch (err) {
-                    this.ui.log(`خطا در بخشنامه: ${err.message}`, 'warn');
+                    this.ui.log(`Circulation error: ${err.message || err}`, 'warn');
                 }
-                await sleep(1000); // Slower polling for mobile
+                await sleep(80);
             }
             return null;
         }
@@ -752,10 +748,10 @@
                     }
                     const err = orderData.errors?.[0]?.errorDescription || orderData.message || 'نامشخص';
                     this.ui.log(`⚠️ عدم ثبت: ${err}`);
-                    if (!err.includes('کد امنیتی')) await sleep(500);
+                    if (!err.includes('کد امنیتی')) await sleep(300);
                 } catch (err) {
                     this.ui.log(`⏳ تلاش مجدد: ${err.message || err}`, 'warn');
-                    await sleep(300);
+                    await sleep(250);
                 }
             }
         }
@@ -808,7 +804,6 @@
         actions: {}
     });
     const engine = new BuyingEngine({ http, captcha, ui, sound });
-
     const actions = {
         async onLogin({ nationalCode, password, captchaResult, captchaToken }) {
             try {
@@ -822,9 +817,12 @@
                 const token = res.token || res.data?.token;
                 const user = res.customer || res.data?.customer;
                 if (!token || !user) throw new Error('پاسخ نامعتبر');
-                Store.setToken(JSON.stringify(token));
+
+                Store.setToken(typeof token === 'object' ? JSON.stringify(token) : token);
                 Store.setUser(user);
+
                 ui.log('ورود موفق ✅');
+                // Removed reload for mobile stability
                 ui.renderDashboard(user, Store.getConfig());
             } catch (err) {
                 ui.log(`ورود ناموفق: ${err.message || err}`, 'error');
@@ -850,19 +848,11 @@
 
     ui.actions = actions;
     captcha.setUpdateHandler((snapshot) => ui.updateQueue(snapshot));
-
     const boot = () => {
-        try {
-            const token = Store.getToken();
-            const user = Store.getUser();
-            // Check if token exists, user might be null on mobile but we proceed
-            if (token) ui.renderDashboard(user, Store.getConfig());
-            else ui.renderLogin();
-        } catch (e) {
-             console.error('Boot error', e);
-             Store.clearSession();
-             ui.renderLogin();
-        }
+        const token = Store.getToken();
+        const user = Store.getUser();
+        if (token && user) ui.renderDashboard(user, Store.getConfig());
+        else ui.renderLogin();
     };
 
     boot();
